@@ -39,6 +39,24 @@ public sealed class DiagnosticService
             lines.Add($"Высокая загрузка RAM: {snapshot.RamUsagePercent:F0}%.");
             hasAlert = true;
         }
+        else if (snapshot.RamUsagePercent >= 80)
+            lines.Add($"RAM близка к насыщению ({snapshot.RamUsagePercent:F0}%). Рекомендуется закрыть фоновые приложения.");
+
+        if (snapshot.LogicalDisks.Count > 0)
+        {
+            foreach (var l in snapshot.LogicalDisks)
+            {
+                if (l.SizeBytes <= 0) continue;
+                var used = (1.0 - (double)l.FreeBytes / l.SizeBytes) * 100.0;
+                if (used >= 95)
+                {
+                    lines.Add($"Критично: диск {l.DeviceId} заполнен на {used:F0}%.");
+                    hasAlert = true;
+                }
+                else if (used >= 85)
+                    lines.Add($"Предупреждение: диск {l.DeviceId} заполнен на {used:F0}%.");
+            }
+        }
 
         foreach (var d in snapshot.PhysicalDisks)
         {
@@ -46,6 +64,16 @@ public sealed class DiagnosticService
             lines.Add($"Диск «{d.Model}»: предсказание отказа по SMART (WMI).");
             hasAlert = true;
         }
+
+        // Узкие места и рекомендации (ТЗ 2.3.2)
+        if (snapshot.CpuLoadPercent is { } cpuLoad && snapshot.RamUsagePercent < 75 && cpuLoad >= 90)
+            lines.Add("Вероятное узкое место: CPU. Рекомендация: проверить охлаждение и фоновые задачи, рассмотреть апгрейд CPU.");
+
+        if (snapshot.RamUsagePercent >= 90 && (snapshot.CpuLoadPercent ?? 0) < 70)
+            lines.Add("Вероятное узкое место: RAM. Рекомендация: увеличить объём памяти и сократить количество резидентных процессов.");
+
+        if (snapshot.LogicalDisks.Any(d => d.SizeBytes > 0 && (1.0 - (double)d.FreeBytes / d.SizeBytes) >= 0.9))
+            lines.Add("Рекомендация: освободить место на системном диске; при HDD рассмотреть переход на SSD/NVMe.");
 
         if (!hasAlert)
             lines.Add("По выбранным правилам критических отклонений не обнаружено.");

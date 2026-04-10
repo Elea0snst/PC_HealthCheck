@@ -5,7 +5,7 @@ namespace PC_HealthCheck.Business;
 
 public sealed class MonitoringService : IDisposable
 {
-    private readonly WindowsHardwareProvider _provider;
+    private readonly IHardwareProvider _provider;
     private PeriodicTimer? _timer;
     private CancellationTokenSource? _cts;
 
@@ -16,7 +16,7 @@ public sealed class MonitoringService : IDisposable
     public DateTime StartedLocal { get; private set; } = DateTime.Now;
     public DateTime LastUpdateLocal { get; private set; } = DateTime.Now;
 
-    public MonitoringService(WindowsHardwareProvider provider)
+    public MonitoringService(IHardwareProvider provider)
     {
         _provider = provider;
     }

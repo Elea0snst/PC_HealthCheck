@@ -12,7 +12,7 @@ namespace PC_HealthCheck.DAL;
 
 
 
-public sealed class WindowsHardwareProvider : IDisposable
+public sealed class WindowsHardwareProvider : IHardwareProvider
 
 {
 
@@ -48,7 +48,13 @@ public sealed class WindowsHardwareProvider : IDisposable
 
                 IsGpuEnabled = true,
 
-                IsMotherboardEnabled = true
+                IsMotherboardEnabled = true,
+
+                IsMemoryEnabled = true,
+
+                IsStorageEnabled = true,
+
+                IsControllerEnabled = true
 
             };
 
@@ -129,6 +135,8 @@ public sealed class WindowsHardwareProvider : IDisposable
         {
 
             _snapshot.MemoryModules.Clear();
+
+            _snapshot.RamTimingSummaryLines.Clear();
 
             _snapshot.MemoryArrays.Clear();
 
@@ -280,57 +288,7 @@ public sealed class WindowsHardwareProvider : IDisposable
 
 
 
-            using (var ramSearcher = new ManagementObjectSearcher(
-
-                       @"SELECT Capacity, Speed, Manufacturer, PartNumber, SerialNumber, SMBIOSMemoryType,
-
-                                BankLabel, DeviceLocator, FormFactor, TypeDetail
-
-                         FROM Win32_PhysicalMemory"))
-
-            {
-
-                foreach (ManagementObject obj in ramSearcher.Get())
-
-                {
-
-                    var cap = Convert.ToInt64(obj["Capacity"] ?? 0L);
-
-                    _snapshot.TotalRamBytes += cap;
-
-                    if (_snapshot.RamType.Length == 0)
-
-                        _snapshot.RamType = DecodeMemoryType(Convert.ToInt32(obj["SMBIOSMemoryType"] ?? 0));
-
-
-
-                    _snapshot.MemoryModules.Add(new MemoryModuleInfo
-
-                    {
-
-                        BankLabel = obj["BankLabel"]?.ToString() ?? "",
-
-                        DeviceLocator = obj["DeviceLocator"]?.ToString() ?? "",
-
-                        Manufacturer = obj["Manufacturer"]?.ToString() ?? "",
-
-                        PartNumber = obj["PartNumber"]?.ToString()?.Trim() ?? "",
-
-                        SerialNumber = obj["SerialNumber"]?.ToString() ?? "",
-
-                        CapacityBytes = cap,
-
-                        SpeedMHz = Convert.ToUInt32(obj["Speed"] ?? 0),
-
-                        FormFactor = DecodeFormFactor(Convert.ToUInt32(obj["FormFactor"] ?? 0u)),
-
-                        TypeDetail = DecodeTypeDetail(Convert.ToUInt32(obj["TypeDetail"] ?? 0u))
-
-                    });
-
-                }
-
-            }
+            TryLoadPhysicalMemoryModules();
 
 
 
@@ -403,6 +361,182 @@ public sealed class WindowsHardwareProvider : IDisposable
         {
 
             return 0;
+
+        }
+
+    }
+
+
+
+    private void TryLoadPhysicalMemoryModules()
+
+    {
+
+        var extendedWql = @"SELECT Capacity, Speed, Manufacturer, PartNumber, SerialNumber, SMBIOSMemoryType,
+
+                                BankLabel, DeviceLocator, FormFactor, TypeDetail,
+
+                                ConfiguredClockSpeed, ConfiguredVoltage, MinVoltage, MaxVoltage, Attributes
+
+                         FROM Win32_PhysicalMemory";
+
+        var basicWql = @"SELECT Capacity, Speed, Manufacturer, PartNumber, SerialNumber, SMBIOSMemoryType,
+
+                                BankLabel, DeviceLocator, FormFactor, TypeDetail
+
+                         FROM Win32_PhysicalMemory";
+
+
+
+        foreach (var (wql, extended) in new[] { (extendedWql, true), (basicWql, false) })
+
+        {
+
+            try
+
+            {
+
+                _snapshot.MemoryModules.Clear();
+
+                long sumBytes = 0;
+
+                using var ramSearcher = new ManagementObjectSearcher(wql);
+
+                foreach (ManagementObject obj in ramSearcher.Get())
+
+                {
+
+                    var cap = Convert.ToInt64(obj["Capacity"] ?? 0L);
+
+                    sumBytes += cap;
+
+                    if (_snapshot.RamType.Length == 0)
+
+                        _snapshot.RamType = DecodeMemoryType(Convert.ToInt32(obj["SMBIOSMemoryType"] ?? 0));
+
+
+
+                    var m = new MemoryModuleInfo
+
+                    {
+
+                        BankLabel = obj["BankLabel"]?.ToString() ?? "",
+
+                        DeviceLocator = obj["DeviceLocator"]?.ToString() ?? "",
+
+                        Manufacturer = obj["Manufacturer"]?.ToString() ?? "",
+
+                        PartNumber = obj["PartNumber"]?.ToString()?.Trim() ?? "",
+
+                        SerialNumber = obj["SerialNumber"]?.ToString() ?? "",
+
+                        CapacityBytes = cap,
+
+                        SpeedMHz = Convert.ToUInt32(obj["Speed"] ?? 0),
+
+                        FormFactor = DecodeFormFactor(Convert.ToUInt32(obj["FormFactor"] ?? 0u)),
+
+                        TypeDetail = DecodeTypeDetail(Convert.ToUInt32(obj["TypeDetail"] ?? 0u))
+
+                    };
+
+
+
+                    if (extended)
+
+                    {
+
+                        m.ConfiguredClockSpeedMHz = Convert.ToUInt32(obj["ConfiguredClockSpeed"] ?? 0u);
+
+                        m.MinVoltageMilliVolts = ToUInt(obj["MinVoltage"]);
+
+                        m.MaxVoltageMilliVolts = ToUInt(obj["MaxVoltage"]);
+
+                        m.ConfiguredVoltageMilliVolts = ToUInt(obj["ConfiguredVoltage"]);
+
+                        m.AttributesRaw = ToUInt(obj["Attributes"]);
+
+                    }
+
+
+
+                    _snapshot.MemoryModules.Add(m);
+
+                }
+
+
+
+                _snapshot.TotalRamBytes = sumBytes;
+
+                FillRamTimingSummaryLines();
+
+                return;
+
+            }
+
+            catch (ManagementException)
+
+            {
+
+                // fallback WQL
+
+            }
+
+            catch (System.Runtime.InteropServices.COMException)
+
+            {
+
+            }
+
+        }
+
+
+
+        FillRamTimingSummaryLines();
+
+    }
+
+
+
+    private void FillRamTimingSummaryLines()
+
+    {
+
+        _snapshot.RamTimingSummaryLines.Clear();
+
+        if (_snapshot.MemoryModules.Count == 0)
+
+        {
+
+            _snapshot.RamTimingSummaryLines.Add("Модули RAM (Win32_PhysicalMemory): не удалось получить данные WMI.");
+
+            return;
+
+        }
+
+
+
+        _snapshot.RamTimingSummaryLines.Add(
+
+            "Тайминги из SPD (tCL, tRCD, tRP, tRAS, XMP/EXPO) через WMI недоступны — нужен доступ к SMBus/SPD. " +
+
+            "Ниже: номинальная и сконфигурированная частота и напряжения из Win32_PhysicalMemory (если отдаёт BIOS).");
+
+
+
+        foreach (var m in _snapshot.MemoryModules)
+
+        {
+
+            var cfg = m.ConfiguredClockSpeedMHz > 0 ? $"{m.ConfiguredClockSpeedMHz} МГц" : "н/д";
+
+            string Mv(uint v) => v > 0 ? $"{v} мВ" : "н/д";
+
+            _snapshot.RamTimingSummaryLines.Add(
+
+                $"{m.DeviceLocator} ({m.BankLabel}): JEDEC/номинал {m.SpeedMHz} МГц, сконфиг. {cfg}; " +
+
+                $"U: {Mv(m.ConfiguredVoltageMilliVolts)}, min {Mv(m.MinVoltageMilliVolts)}, max {Mv(m.MaxVoltageMilliVolts)}; attr 0x{m.AttributesRaw:X4}");
 
         }
 
@@ -1218,6 +1352,8 @@ public sealed class WindowsHardwareProvider : IDisposable
 
         _snapshot.CpuSensors.Clear();
 
+        _snapshot.AllHardwareSensors.Clear();
+
         double? cpuTemp = null;
 
         double? cpuLoad = null;
@@ -1231,110 +1367,7 @@ public sealed class WindowsHardwareProvider : IDisposable
 
 
         foreach (var hw in _computer.Hardware)
-
-        {
-
-            hw.Update();
-
-
-
-            foreach (var s in hw.Sensors)
-
-            {
-
-                if (!s.Value.HasValue)
-
-                    continue;
-
-
-
-                if (s.SensorType == LibreHardwareMonitor.Hardware.SensorType.Temperature)
-
-                {
-
-                    var v = s.Value.Value;
-
-                    if (v > -50 && v < 150)
-
-                    {
-
-                        _snapshot.CpuSensors.Add(new SensorReading
-
-                        {
-
-                            Name = s.Name,
-
-                            Kind = SensorKind.Temperature,
-
-                            Unit = "°C",
-
-                            Value = v,
-
-                            TimestampLocal = DateTime.Now
-
-                        });
-
-
-
-                        if (hw.HardwareType == HardwareType.Cpu &&
-
-                            (cpuTemp is null || s.Name.Contains("Package", StringComparison.OrdinalIgnoreCase)))
-
-                        {
-
-                            cpuTemp = v;
-
-                        }
-
-                    }
-
-                }
-
-                else if (s.SensorType == LibreHardwareMonitor.Hardware.SensorType.Load)
-
-                {
-
-                    var v = s.Value.Value;
-
-                    if (v >= 0 && v <= 100)
-
-                    {
-
-                        _snapshot.CpuSensors.Add(new SensorReading
-
-                        {
-
-                            Name = s.Name,
-
-                            Kind = SensorKind.Load,
-
-                            Unit = "%",
-
-                            Value = v,
-
-                            TimestampLocal = DateTime.Now
-
-                        });
-
-
-
-                        if (hw.HardwareType == HardwareType.Cpu &&
-
-                            (cpuLoad is null || s.Name.Contains("Total", StringComparison.OrdinalIgnoreCase)))
-
-                        {
-
-                            cpuLoad = v;
-
-                        }
-
-                    }
-
-                }
-
-            }
-
-        }
+            ReadHardwareRecursive(hw, ref cpuTemp, ref cpuLoad);
 
 
 
@@ -1347,6 +1380,159 @@ public sealed class WindowsHardwareProvider : IDisposable
         _snapshot.CpuTemperatureC = cpuTemp;
 
         _snapshot.CpuLoadPercent = cpuLoad;
+
+        HardwareSensorCategorizer.Apply(_snapshot);
+
+    }
+
+    private void ReadHardwareRecursive(IHardware hw, ref double? cpuTemp, ref double? cpuLoad)
+    {
+        hw.Update();
+        foreach (var s in hw.Sensors)
+        {
+            if (!s.Value.HasValue)
+                continue;
+
+            TryAppendAllHardwareSensor(hw, s);
+            TryAppendCpuSensor(hw, s, ref cpuTemp, ref cpuLoad);
+        }
+
+        foreach (var sub in hw.SubHardware)
+            ReadHardwareRecursive(sub, ref cpuTemp, ref cpuLoad);
+    }
+
+    private void TryAppendCpuSensor(IHardware hw, ISensor s, ref double? cpuTemp, ref double? cpuLoad)
+    {
+        if (s.SensorType == LibreHardwareMonitor.Hardware.SensorType.Temperature)
+        {
+            var v = s.Value!.Value;
+            if (v <= -50 || v >= 150)
+                return;
+
+            _snapshot.CpuSensors.Add(new SensorReading
+            {
+                Name = s.Name,
+                Kind = SensorKind.Temperature,
+                Unit = "°C",
+                Value = v,
+                TimestampLocal = DateTime.Now
+            });
+
+            if (hw.HardwareType == HardwareType.Cpu &&
+                (cpuTemp is null
+                 || s.Name.Contains("Package", StringComparison.OrdinalIgnoreCase)
+                 || s.Name.Contains("Tctl", StringComparison.OrdinalIgnoreCase)
+                 || s.Name.Contains("Tdie", StringComparison.OrdinalIgnoreCase)))
+            {
+                cpuTemp = v;
+            }
+        }
+        else if (s.SensorType == LibreHardwareMonitor.Hardware.SensorType.Load)
+        {
+            var v = s.Value!.Value;
+            if (v < 0 || v > 100)
+                return;
+
+            _snapshot.CpuSensors.Add(new SensorReading
+            {
+                Name = s.Name,
+                Kind = SensorKind.Load,
+                Unit = "%",
+                Value = v,
+                TimestampLocal = DateTime.Now
+            });
+
+            if (hw.HardwareType == HardwareType.Cpu &&
+                (cpuLoad is null
+                 || s.Name.Contains("Total", StringComparison.OrdinalIgnoreCase)
+                 || s.Name.Contains("CPU Total", StringComparison.OrdinalIgnoreCase)))
+            {
+                cpuLoad = v;
+            }
+        }
+    }
+
+
+
+    private void TryAppendAllHardwareSensor(IHardware hw, ISensor s)
+
+    {
+
+        var v = s.Value!.Value;
+
+        var st = s.SensorType;
+
+        if (st == SensorType.Fan && (v < 0 || v > 200_000))
+
+            return;
+
+        if (st == SensorType.Temperature && (v < -80 || v > 220))
+
+            return;
+
+        var (kind, unit) = MapLibreSensorKind(st);
+
+        _snapshot.AllHardwareSensors.Add(new SensorReading
+
+        {
+
+            Name = $"{hw.Name} / {s.Name}",
+
+            HardwareGroup = hw.HardwareType.ToString(),
+
+            Kind = kind,
+
+            Unit = unit,
+
+            Value = v,
+
+            TimestampLocal = DateTime.Now
+
+        });
+
+    }
+
+
+
+    private static (SensorKind Kind, string Unit) MapLibreSensorKind(SensorType t)
+
+    {
+
+        return t switch
+
+        {
+
+            SensorType.Temperature => (SensorKind.Temperature, "°C"),
+
+            SensorType.Load => (SensorKind.Load, "%"),
+
+            SensorType.Voltage => (SensorKind.Voltage, "V"),
+
+            SensorType.Clock => (SensorKind.Clock, "MHz"),
+
+            SensorType.Fan => (SensorKind.Fan, "RPM"),
+
+            SensorType.Power => (SensorKind.Power, "W"),
+
+            SensorType.Current => (SensorKind.Other, "A"),
+
+            SensorType.Energy => (SensorKind.Other, "J"),
+
+            SensorType.Data => (SensorKind.Other, ""),
+
+            SensorType.SmallData => (SensorKind.Other, ""),
+
+            SensorType.Throughput => (SensorKind.Other, ""),
+
+            SensorType.Level => (SensorKind.Other, "%"),
+
+            SensorType.Factor => (SensorKind.Other, ""),
+
+            SensorType.Frequency => (SensorKind.Clock, "Hz"),
+
+            _ => (SensorKind.Other, "")
+
+        };
 
     }
 
@@ -1612,6 +1798,26 @@ public sealed class WindowsHardwareProvider : IDisposable
 
                 Name = x.Name,
 
+                HardwareGroup = x.HardwareGroup,
+
+                Kind = x.Kind,
+
+                Unit = x.Unit,
+
+                Value = x.Value,
+
+                TimestampLocal = x.TimestampLocal
+
+            }).ToList(),
+
+            AllHardwareSensors = s.AllHardwareSensors.Select(x => new SensorReading
+
+            {
+
+                Name = x.Name,
+
+                HardwareGroup = x.HardwareGroup,
+
                 Kind = x.Kind,
 
                 Unit = x.Unit,
@@ -1642,7 +1848,17 @@ public sealed class WindowsHardwareProvider : IDisposable
 
                 FormFactor = m.FormFactor,
 
-                TypeDetail = m.TypeDetail
+                TypeDetail = m.TypeDetail,
+
+                ConfiguredClockSpeedMHz = m.ConfiguredClockSpeedMHz,
+
+                MinVoltageMilliVolts = m.MinVoltageMilliVolts,
+
+                MaxVoltageMilliVolts = m.MaxVoltageMilliVolts,
+
+                ConfiguredVoltageMilliVolts = m.ConfiguredVoltageMilliVolts,
+
+                AttributesRaw = m.AttributesRaw
 
             }).ToList(),
 
@@ -1820,7 +2036,99 @@ public sealed class WindowsHardwareProvider : IDisposable
 
                 FreeBytes = l.FreeBytes
 
-            }).ToList()
+            }).ToList(),
+
+            CpuPerCoreClocks = s.CpuPerCoreClocks.Select(x => new SensorReading
+
+            {
+
+                Name = x.Name,
+
+                HardwareGroup = x.HardwareGroup,
+
+                Kind = x.Kind,
+
+                Unit = x.Unit,
+
+                Value = x.Value,
+
+                TimestampLocal = x.TimestampLocal
+
+            }).ToList(),
+
+            CpuPerCoreVoltages = s.CpuPerCoreVoltages.Select(x => new SensorReading
+
+            {
+
+                Name = x.Name,
+
+                HardwareGroup = x.HardwareGroup,
+
+                Kind = x.Kind,
+
+                Unit = x.Unit,
+
+                Value = x.Value,
+
+                TimestampLocal = x.TimestampLocal
+
+            }).ToList(),
+
+            VrmChipsetSensors = s.VrmChipsetSensors.Select(x => new SensorReading
+
+            {
+
+                Name = x.Name,
+
+                HardwareGroup = x.HardwareGroup,
+
+                Kind = x.Kind,
+
+                Unit = x.Unit,
+
+                Value = x.Value,
+
+                TimestampLocal = x.TimestampLocal
+
+            }).ToList(),
+
+            FanSensors = s.FanSensors.Select(x => new SensorReading
+
+            {
+
+                Name = x.Name,
+
+                HardwareGroup = x.HardwareGroup,
+
+                Kind = x.Kind,
+
+                Unit = x.Unit,
+
+                Value = x.Value,
+
+                TimestampLocal = x.TimestampLocal
+
+            }).ToList(),
+
+            StorageTemperatureSensors = s.StorageTemperatureSensors.Select(x => new SensorReading
+
+            {
+
+                Name = x.Name,
+
+                HardwareGroup = x.HardwareGroup,
+
+                Kind = x.Kind,
+
+                Unit = x.Unit,
+
+                Value = x.Value,
+
+                TimestampLocal = x.TimestampLocal
+
+            }).ToList(),
+
+            RamTimingSummaryLines = s.RamTimingSummaryLines.ToList()
 
         };
 

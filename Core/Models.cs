@@ -12,7 +12,13 @@ public enum SensorKind
 
     Clock,
 
-    Voltage
+    Voltage,
+
+    Fan,
+
+    Power,
+
+    Other
 
 }
 
@@ -23,6 +29,10 @@ public sealed class SensorReading
 {
 
     public string Name { get; set; } = "";
+
+    /// <summary>Группа оборудования LibreHardwareMonitor (Cpu, Gpu, Motherboard, …).</summary>
+
+    public string HardwareGroup { get; set; } = "";
 
     public SensorKind Kind { get; set; }
 
@@ -57,6 +67,26 @@ public sealed class MemoryModuleInfo
     public string FormFactor { get; set; } = "";
 
     public string TypeDetail { get; set; } = "";
+
+    /// <summary>Текущая скорость по WMI (ConfiguredClockSpeed), МГц.</summary>
+
+    public uint ConfiguredClockSpeedMHz { get; set; }
+
+    /// <summary>WMI: минимальное напряжение модуля, мВ (0 — не сообщено).</summary>
+
+    public uint MinVoltageMilliVolts { get; set; }
+
+    /// <summary>WMI: максимальное напряжение, мВ.</summary>
+
+    public uint MaxVoltageMilliVolts { get; set; }
+
+    /// <summary>WMI: сконфигурированное напряжение, мВ.</summary>
+
+    public uint ConfiguredVoltageMilliVolts { get; set; }
+
+    /// <summary>Сырые атрибуты Win32_PhysicalMemory.</summary>
+
+    public uint AttributesRaw { get; set; }
 
 }
 
@@ -330,6 +360,10 @@ public sealed class DeviceSnapshot
 
     public List<SensorReading> CpuSensors { get; set; } = new();
 
+    /// <summary>Все доступные сенсоры LHM: вентиляторы, напряжения, частоты, температура накопителей и т.д.</summary>
+
+    public List<SensorReading> AllHardwareSensors { get; set; } = new();
+
     public List<MemoryModuleInfo> MemoryModules { get; set; } = new();
 
     public List<MemoryArrayInfo> MemoryArrays { get; set; } = new();
@@ -349,6 +383,30 @@ public sealed class DeviceSnapshot
     public List<PhysicalDiskInfo> PhysicalDisks { get; set; } = new();
 
     public List<LogicalDiskInfo> LogicalDisks { get; set; } = new();
+
+    /// <summary>Частоты ядер CPU (из LHM, если доступны).</summary>
+
+    public List<SensorReading> CpuPerCoreClocks { get; set; } = new();
+
+    /// <summary>Напряжения по ядрам / VID / Vcore (LHM).</summary>
+
+    public List<SensorReading> CpuPerCoreVoltages { get; set; } = new();
+
+    /// <summary>Материнская плата: напряжения, температуры силовых узлов, PCH/чипсет (LHM).</summary>
+
+    public List<SensorReading> VrmChipsetSensors { get; set; } = new();
+
+    /// <summary>Все вентиляторы (LHM).</summary>
+
+    public List<SensorReading> FanSensors { get; set; } = new();
+
+    /// <summary>Температуры накопителей / NVMe / SSD (LHM).</summary>
+
+    public List<SensorReading> StorageTemperatureSensors { get; set; } = new();
+
+    /// <summary>Пояснения по таймингам RAM (WMI не отдаёт tCL/tRCD; SPD — отдельно).</summary>
+
+    public List<string> RamTimingSummaryLines { get; set; } = new();
 
 }
 
@@ -386,6 +444,88 @@ public sealed class StressResult
 
     public DateTime EndedUtc { get; set; } = DateTime.UtcNow;
 
+}
+
+
+
+/// <summary>Результат быстрого синтетического бенчмарка и сравнение с встроенным эталоном.</summary>
+
+public sealed class BenchmarkRunResult
+
+{
+
+    public DateTime CompletedUtc { get; set; } = DateTime.UtcNow;
+
+    /// <summary>Скалярная нагрузка: млн итераций sqrt/sin в секунду (условные «мегаоп./с»).</summary>
+
+    public double CpuFpMegaOpsPerSec { get; set; }
+
+    /// <summary>Пиковая скорость копирования буферов, ГБ/с.</summary>
+
+    public double RamBandwidthGbPerSec { get; set; }
+
+    public double? ReferenceCpuMegaOps { get; set; }
+
+    public double? ReferenceRamGbps { get; set; }
+
+    public string ReferenceMatchLabel { get; set; } = "";
+
+}
+
+
+
+public sealed class ProcessEntry
+
+{
+
+    public int ProcessId { get; set; }
+
+    public string Name { get; set; } = "";
+
+    public long WorkingSetBytes { get; set; }
+
+    public int ThreadCount { get; set; }
+
+}
+
+
+
+public sealed class StartupEntry
+
+{
+
+    public string Location { get; set; } = "";
+
+    public string Name { get; set; } = "";
+
+    public string Command { get; set; } = "";
+
+}
+
+
+
+public sealed class NetworkInterfaceStat
+
+{
+
+    public string Name { get; set; } = "";
+
+    public string Description { get; set; } = "";
+
+    public long BytesReceived { get; set; }
+
+    public long BytesSent { get; set; }
+
+}
+
+public sealed class SnapshotComparisonReport
+{
+    public DateTime GeneratedUtc { get; set; } = DateTime.UtcNow;
+    public DateTime BaselineUtc { get; set; }
+    public DateTime CurrentUtc { get; set; }
+    public string BaselineLabel { get; set; } = "";
+    public string CurrentLabel { get; set; } = "";
+    public List<string> Lines { get; set; } = new();
 }
 
 
