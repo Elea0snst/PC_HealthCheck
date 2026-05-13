@@ -9,6 +9,9 @@ using PC_HealthCheck.DAL;
 using PC_HealthCheck.Visualization;
 using System.Runtime.InteropServices;
 using System.Collections.ObjectModel;
+using System.Net.Http;
+using System.Threading.Tasks;
+using System.Text.Json;
 
 namespace PC_HealthCheck.ViewModels;
 
@@ -21,6 +24,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
     private readonly ReportService _reports = new();
     private readonly DiagnosticService _diagnostics = new();
     private readonly BenchmarkService _benchmarks = new();
+    private readonly AiOllamaService _ai = new();
     private readonly UserAppSettings _storedSettings;
 
     private DeviceSnapshot _snapshot = new();
@@ -28,6 +32,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
     private string _stressStatus = "Тест не запущен";
     private string _statusText = "Инициализация...";
     private string _statusDetails = "";
+    private string _statusLevel = "OK";
     private string? _lastReportPath;
     private string _comparisonStatusText = "Базовый снимок не сохранён.";
     private ReportFormat _selectedReportFormat = ReportFormat.Html;
@@ -39,6 +44,13 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
     private string _reportCommentText = "";
     private bool _useDarkTheme;
     private bool _stressConfirmationAccepted;
+    private string _ollamaBaseUrlText = "http://localhost:11434";
+    private string _ollamaModelText = "llama3.2";
+    private string _aiQuestionText = "Что было необычного за последние 24 часа?";
+    private string _aiStatusText = "AI анализ не запускался.";
+    private string _aiRawJsonText = "";
+    private string _aiSetupStatusText = "Проверка Ollama не выполнялась.";
+    private StressTestProfile _selectedStressProfile = StressTestProfile.Quick5m;
 
     private double? _cpuTempSessionMin;
     private double? _cpuTempSessionMax;
@@ -52,10 +64,20 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
     private DateTime _lastTempAlertUtc = DateTime.MinValue;
     private DateTime _lastRamAlertUtc = DateTime.MinValue;
     private DateTime _lastDiskAlertUtc = DateTime.MinValue;
+    private DateTime _lastThrottleEventUtc = DateTime.MinValue;
 
     private string _utilitiesStatus = "Нажмите «Обновить» в нужном разделе.";
 
     private const int MaxLiveChartPoints = 720;
+
+    private string _agentResponseText = "";
+    private bool _isAiThinking;
+    private bool _isUserQuestionMode;
+    public bool IsUserQuestionMode
+    {
+        get => _isUserQuestionMode;
+        set => SetProperty(ref _isUserQuestionMode, value);
+    }
 
     public MainWindowViewModel()
     {
@@ -129,6 +151,9 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
         NetworkStatLines = new ObservableCollection<string>();
         StartupLines = new ObservableCollection<string>();
         AlertHistoryLines = new ObservableCollection<string>();
+        EventHistoryLines = new ObservableCollection<string>();
+        AiAnomaliesLines = new ObservableCollection<string>();
+        AiRecommendationLines = new ObservableCollection<string>();
 
         StartCpuStressCommand = new AsyncRelayCommand(StartCpuStressAsync);
         StartRamStressCommand = new AsyncRelayCommand(StartRamStressAsync);
@@ -146,6 +171,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
         RefreshNetworkStatsCommand = new RelayCommand(RefreshNetworkStats);
         RefreshStartupCommand = new RelayCommand(RefreshStartup);
         CleanupTempCommand = new RelayCommand(CleanupTemp);
+        RunAiDiagnosticsCommand = new AsyncRelayCommand(RunAiDiagnosticsAsync);
+        CheckAiSetupCommand = new AsyncRelayCommand(CheckAiSetupAsync);
 
         ApplyThemeFromSettings();
 
@@ -160,6 +187,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
         _reportCommentText = _storedSettings.ReportComment ?? "";
         _useDarkTheme = _storedSettings.UseDarkTheme;
         _stressConfirmationAccepted = _storedSettings.StressTestConfirmationAccepted;
+        _ollamaBaseUrlText = string.IsNullOrWhiteSpace(_storedSettings.OllamaBaseUrl) ? "http://localhost:11434" : _storedSettings.OllamaBaseUrl.Trim();
+        _ollamaModelText = string.IsNullOrWhiteSpace(_storedSettings.OllamaModel) ? "llama3.2" : _storedSettings.OllamaModel.Trim();
     }
 
     private void PushSettingsToStore()
@@ -172,6 +201,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
         _storedSettings.ReportComment = ReportCommentText ?? "";
         _storedSettings.UseDarkTheme = UseDarkTheme;
         _storedSettings.StressTestConfirmationAccepted = StressConfirmationAccepted;
+        _storedSettings.OllamaBaseUrl = string.IsNullOrWhiteSpace(OllamaBaseUrlText) ? "http://localhost:11434" : OllamaBaseUrlText.Trim();
+        _storedSettings.OllamaModel = string.IsNullOrWhiteSpace(OllamaModelText) ? "llama3.2" : OllamaModelText.Trim();
     }
 
     private static int ParseIntUi(string? text, int fallback, int min, int max)
@@ -215,6 +246,9 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
 
     public ObservableCollection<string> StartupLines { get; }
     public ObservableCollection<string> AlertHistoryLines { get; }
+    public ObservableCollection<string> EventHistoryLines { get; }
+    public ObservableCollection<string> AiAnomaliesLines { get; }
+    public ObservableCollection<string> AiRecommendationLines { get; }
 
     public PlotModel MonitoringPlotModel => _liveChart.Model;
 
@@ -270,6 +304,25 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
         set => SetProperty(ref _statusDetails, value);
     }
 
+    /// <summary>OK / WARN / CRITICAL — для UI chip-индикатора.</summary>
+    public string StatusLevel
+    {
+        get => _statusLevel;
+        set
+        {
+            if (SetProperty(ref _statusLevel, value))
+            {
+                OnPropertyChanged(nameof(IsStatusOk));
+                OnPropertyChanged(nameof(IsStatusWarn));
+                OnPropertyChanged(nameof(IsStatusCritical));
+            }
+        }
+    }
+
+    public bool IsStatusOk => string.Equals(StatusLevel, "OK", StringComparison.OrdinalIgnoreCase);
+    public bool IsStatusWarn => string.Equals(StatusLevel, "WARN", StringComparison.OrdinalIgnoreCase);
+    public bool IsStatusCritical => string.Equals(StatusLevel, "CRITICAL", StringComparison.OrdinalIgnoreCase);
+
     public string CpuHeader => _snapshot.CpuName;
     public string CpuTempText => TemperatureStatusLine(_snapshot.CpuTemperatureC);
     public string CpuLoadText => $"CPU загрузка: {(_snapshot.CpuLoadPercent?.ToString("F0") ?? "N/A")} %";
@@ -305,7 +358,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
     }
 
     public IReadOnlyList<ReportFormat> ReportFormatOptions { get; } =
-        new[] { ReportFormat.Txt, ReportFormat.Html, ReportFormat.Csv, ReportFormat.Json };
+        new[] { ReportFormat.Txt, ReportFormat.Html, ReportFormat.Md, ReportFormat.Csv, ReportFormat.Json };
 
     public string? LastReportPath
     {
@@ -355,6 +408,51 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
         set => SetProperty(ref _stressConfirmationAccepted, value);
     }
 
+    public string OllamaBaseUrlText
+    {
+        get => _ollamaBaseUrlText;
+        set => SetProperty(ref _ollamaBaseUrlText, value);
+    }
+
+    public string OllamaModelText
+    {
+        get => _ollamaModelText;
+        set => SetProperty(ref _ollamaModelText, value);
+    }
+
+    public string AiQuestionText
+    {
+        get => _aiQuestionText;
+        set => SetProperty(ref _aiQuestionText, value);
+    }
+
+    public string AiStatusText
+    {
+        get => _aiStatusText;
+        private set => SetProperty(ref _aiStatusText, value);
+    }
+
+    public string AiRawJsonText
+    {
+        get => _aiRawJsonText;
+        private set => SetProperty(ref _aiRawJsonText, value);
+    }
+
+    public string AiSetupStatusText
+    {
+        get => _aiSetupStatusText;
+        private set => SetProperty(ref _aiSetupStatusText, value);
+    }
+
+    public StressTestProfile SelectedStressProfile
+    {
+        get => _selectedStressProfile;
+        set => SetProperty(ref _selectedStressProfile, value);
+    }
+
+    public IReadOnlyList<StressTestProfile> StressProfileOptions { get; } =
+        new[] { StressTestProfile.Quick5m, StressTestProfile.Stability30m, StressTestProfile.Overclock60m };
+
     public IAsyncRelayCommand StartCpuStressCommand { get; }
     public IAsyncRelayCommand StartRamStressCommand { get; }
     public IAsyncRelayCommand StartGpuStressCommand { get; }
@@ -376,6 +474,9 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
     public IRelayCommand RefreshStartupCommand { get; }
 
     public IRelayCommand CleanupTempCommand { get; }
+
+    public IAsyncRelayCommand RunAiDiagnosticsCommand { get; }
+    public IAsyncRelayCommand CheckAiSetupCommand { get; }
 
     public string UtilitiesStatus
     {
@@ -406,6 +507,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
         {
             StatusText = "Ошибка";
             StatusDetails = "Не удалось инициализировать датчики";
+            StatusLevel = "CRITICAL";
             return;
         }
 
@@ -413,6 +515,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
         var sec = Math.Max(1, _storedSettings.MonitoringIntervalSeconds);
         await _monitoring.StartAsync(TimeSpan.FromSeconds(sec));
         StatusText = "Мониторинг активен";
+        StatusLevel = "OK";
         var limitedNote = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
             ? ""
             : " Режим Linux/macOS: базовый мониторинг без WMI/LHM-датчиков.";
@@ -455,7 +558,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
         IsTestRunning = true;
         StressProgress = 0;
         StressStatus = "CPU тест выполняется...";
-        var started = await _testing.StartCpuTestAsync(60);
+        var seconds = SelectedStressProfile.Seconds();
+        var started = await _testing.StartCpuTestAsync(seconds);
         if (!started)
         {
             IsTestRunning = false;
@@ -474,7 +578,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
         IsTestRunning = true;
         StressProgress = 0;
         StressStatus = "RAM тест выполняется...";
-        var started = await _testing.StartRamTestAsync(60);
+        var seconds = SelectedStressProfile.Seconds();
+        var started = await _testing.StartRamTestAsync(seconds);
         if (!started)
         {
             IsTestRunning = false;
@@ -493,7 +598,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
         IsTestRunning = true;
         StressProgress = 0;
         StressStatus = "GPU тест выполняется...";
-        var started = await _testing.StartGpuTestAsync(60);
+        var seconds = SelectedStressProfile.Seconds();
+        var started = await _testing.StartGpuTestAsync(seconds);
         if (!started)
         {
             IsTestRunning = false;
@@ -512,7 +618,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
         IsTestRunning = true;
         StressProgress = 0;
         StressStatus = "Disk тест выполняется...";
-        var started = await _testing.StartDiskTestAsync(60);
+        var seconds = SelectedStressProfile.Seconds();
+        var started = await _testing.StartDiskTestAsync(seconds);
         if (!started)
         {
             IsTestRunning = false;
@@ -537,6 +644,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
                 _testing.Stop();
                 StressStatus = $"Тест аварийно остановлен: CPU {t:F1}°C достиг критического порога.";
                 AddAlert("CRITICAL", $"CPU {t:F1}°C достиг критического порога, тест остановлен автоматически.");
+                RecordEvent("CRITICAL", "StressStopOverheat", $"Авто-остановка стресс-теста: CPU {t:F1}°C достиг критического порога.");
             }
             await _db.SaveSnapshotAsync(s);
         });
@@ -708,6 +816,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
         {
             _lastTempAlertUtc = now;
             AddAlert(t >= _storedSettings.CpuTempCriticalCelsius ? "CRITICAL" : "WARN", $"CPU температура {t:F1}°C.");
+            if (t >= _storedSettings.CpuTempCriticalCelsius)
+                RecordEvent("CRITICAL", "OverheatCpu", $"CPU достиг критической температуры: {t:F1}°C.");
         }
 
         if (s.RamUsagePercent >= 90 && now - _lastRamAlertUtc > TimeSpan.FromSeconds(45))
@@ -723,6 +833,52 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
             var used = (1.0 - (double)diskCritical.FreeBytes / diskCritical.SizeBytes) * 100.0;
             AddAlert("WARN", $"Диск {diskCritical.DeviceId} заполнен на {used:F0}%.");
         }
+
+        EvaluateThrottlingEvent(s, now);
+    }
+
+    private void EvaluateThrottlingEvent(DeviceSnapshot s, DateTime nowLocal)
+    {
+        if (nowLocal - _lastThrottleEventUtc < TimeSpan.FromSeconds(60))
+            return;
+
+        if (s.CpuLoadPercent is not { } load || load < 90)
+            return;
+
+        if (s.CpuTemperatureC is not { } tempC)
+            return;
+
+        var warn = _storedSettings.CpuTempWarningCelsius;
+        if (tempC < warn)
+            return;
+
+        var avgClock = AverageClockMHz(s.CpuPerCoreClocks);
+        if (avgClock is null)
+            return;
+
+        if (s.CpuMaxClockMHz <= 0)
+            return;
+
+        var ratio = avgClock.Value / s.CpuMaxClockMHz;
+        if (ratio <= 0.60)
+        {
+            _lastThrottleEventUtc = nowLocal;
+            var msg = $"Возможен троттлинг: CPU load {load:F0}%, temp {tempC:F1}°C, средняя частота ~{avgClock.Value:F0} MHz (≈{ratio * 100:F0}% от max {s.CpuMaxClockMHz} MHz).";
+            AddAlert("WARN", msg);
+            RecordEvent("WARN", "CpuThrottlingSuspected", msg);
+        }
+    }
+
+    private static double? AverageClockMHz(IReadOnlyList<SensorReading> clocks)
+    {
+        if (clocks.Count == 0) return null;
+        var values = clocks
+            .Where(x => x.Kind == SensorKind.Clock)
+            .Select(x => x.Value)
+            .Where(v => v > 10 && v < 10000)
+            .ToArray();
+        if (values.Length == 0) return null;
+        return values.Average();
     }
 
     private void AddAlert(string level, string message)
@@ -731,8 +887,27 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
         AlertHistoryLines.Insert(0, line);
         while (AlertHistoryLines.Count > 500)
             AlertHistoryLines.RemoveAt(AlertHistoryLines.Count - 1);
+        StatusLevel = level;
         StatusText = level == "CRITICAL" ? "Критическое предупреждение" : "Предупреждение";
         StatusDetails = message;
+    }
+
+    private void RecordEvent(string level, string kind, string message)
+    {
+        var ts = DateTime.UtcNow;
+        _ = _db.SaveEventAsync(new EventRow
+        {
+            TsUtc = ts,
+            Level = level,
+            Kind = kind,
+            Message = message,
+            Json = JsonSerializer.Serialize(new { level, kind, message, tsUtc = ts.ToString("O") })
+        });
+
+        var line = $"{DateTime.Now:HH:mm:ss} [{level}] {kind}: {message}";
+        EventHistoryLines.Insert(0, line);
+        while (EventHistoryLines.Count > 500)
+            EventHistoryLines.RemoveAt(EventHistoryLines.Count - 1);
     }
 
     private async Task RunBenchmarkAsync()
@@ -790,6 +965,101 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
     {
         var r = UtilitiesService.CleanupOldTempFiles(7);
         UtilitiesStatus = r.Detail;
+    }
+
+    private async Task RunAiDiagnosticsAsync()
+    {
+        PushSettingsToStore();
+        UserSettingsStore.Save(_storedSettings);
+
+        // Очистка через UI поток
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            AiRawJsonText = "";
+            AiStatusText = "Анализирую данные, подождите... (это может занять до 2 минут)";
+            AiAnomaliesLines.Clear();
+            AiRecommendationLines.Clear();
+        });
+
+        var userQuestion = string.IsNullOrWhiteSpace(AiQuestionText)
+            ? "Проанализируй состояние компьютера и дай подробные рекомендации"
+            : AiQuestionText.Trim();
+
+        try
+        {
+            var since = DateTime.UtcNow.AddHours(-12);
+            var history = await _db.GetSnapshotsSinceUtcAsync(since, limit: 200);
+            var procs = UtilitiesService.GetTopProcessesByWorkingSet(20);
+
+            var prompt = _ai.BuildUserQuestionPrompt(history, _snapshot, procs, userQuestion);
+
+            var response = await _ai.RunAiDiagnosticsAsync(
+                _storedSettings.OllamaBaseUrl,
+                _storedSettings.OllamaModel,
+                prompt,
+                CancellationToken.None);
+
+            // Обновляем UI
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                AiRawJsonText = response ?? "";
+
+                if (!string.IsNullOrWhiteSpace(response))
+                {
+                    // Прямая установка без преобразований
+                    AiStatusText = response;
+
+                    // Принудительное обновление свойства
+                    OnPropertyChanged(nameof(AiStatusText));
+                    OnPropertyChanged(nameof(AiRawJsonText));
+                }
+                else
+                {
+                    AiStatusText = "Не удалось получить ответ от AI. Проверьте Ollama.";
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                AiStatusText = $"Ошибка: {ex.Message}";
+                AiRawJsonText = $"Exception: {ex}";
+                OnPropertyChanged(nameof(AiStatusText));
+                OnPropertyChanged(nameof(AiRawJsonText));
+            });
+        }
+    }
+    private async Task CheckAiSetupAsync()
+    {
+        PushSettingsToStore();
+        UserSettingsStore.Save(_storedSettings);
+
+        AiSetupStatusText = "Проверяем Ollama и список моделей...";
+        try
+        {
+            var (ok, detail, models) = await _ai.CheckOllamaAsync(_storedSettings.OllamaBaseUrl, CancellationToken.None);
+            if (!ok)
+            {
+                AiSetupStatusText =
+                    detail +
+                    "\n\nУстановка (Windows):\n" +
+                    "- winget: winget install Ollama.Ollama\n" +
+                    "- затем запусти Ollama и выполни: ollama pull " + _storedSettings.OllamaModel + "\n" +
+                    "- проверь: ollama list";
+                return;
+            }
+
+            var wanted = _storedSettings.OllamaModel.Trim();
+            var has = models.Contains(wanted) || models.Any(x => string.Equals(x.Split(':')[0], wanted, StringComparison.OrdinalIgnoreCase));
+            AiSetupStatusText = has
+                ? detail + $" Модель «{wanted}» найдена."
+                : detail + $" Модель «{wanted}» НЕ найдена. Установи: ollama pull {wanted}";
+        }
+        catch (Exception ex)
+        {
+            AiSetupStatusText = $"Ошибка проверки: {ex.Message}";
+        }
     }
 
     private void GenerateReport()

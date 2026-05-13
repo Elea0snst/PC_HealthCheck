@@ -26,7 +26,10 @@ public sealed class MonitoringLiveChart
         Model.Axes.Add(new LinearAxis
         {
             Position = AxisPosition.Bottom,
+            Key = "Time",
             Title = "Время от начала сессии, с",
+            Minimum = 0,
+            Maximum = 10,
             MajorGridlineStyle = LineStyle.Solid,
             MinorGridlineStyle = LineStyle.Dot,
             MajorGridlineColor = OxyColor.FromAColor(40, OxyColors.Gray),
@@ -38,6 +41,8 @@ public sealed class MonitoringLiveChart
             Position = AxisPosition.Left,
             Key = "Temp",
             Title = "°C",
+            Minimum = 0,
+            Maximum = 120,
             MinimumPadding = 0.02,
             MaximumPadding = 0.08,
             MajorGridlineStyle = LineStyle.Dot,
@@ -82,15 +87,19 @@ public sealed class MonitoringLiveChart
         _tempSeries.Points.Clear();
         _loadSeries.Points.Clear();
         ClearZones();
-        ResetTempAxisAuto();
+        ResetAxesToDefault();
         Model.InvalidatePlot(true);
     }
 
-    private void ResetTempAxisAuto()
+    private void ResetAxesToDefault()
     {
-        var ax = Model.Axes.OfType<LinearAxis>().First(a => a.Key == "Temp");
-        ax.Minimum = double.NaN;
-        ax.Maximum = double.NaN;
+        var tempAx = Model.Axes.OfType<LinearAxis>().First(a => a.Key == "Temp");
+        tempAx.Minimum = 0;
+        tempAx.Maximum = 120;
+
+        var timeAx = Model.Axes.OfType<LinearAxis>().First(a => a.Key == "Time");
+        timeAx.Minimum = 0;
+        timeAx.Maximum = 10;
     }
 
     private void ClearZones()
@@ -158,7 +167,16 @@ public sealed class MonitoringLiveChart
         if (_loadSeries.Points.Count > 0)
             maxX = Math.Max(maxX, _loadSeries.Points[^1].X);
 
-        RebuildZones(warnC, critC, maxX);
+        // Зоны температуры показываем только при включенном канале температуры.
+        if (showTemp)
+            RebuildZones(warnC, critC, maxX);
+        else
+            ClearZones();
+
+        var timeAxis = Model.Axes.OfType<LinearAxis>().First(a => a.Key == "Time");
+        timeAxis.Minimum = 0;
+        // При старте графика точек ещё нет — задаём разумный максимум, чтобы аннотации/оси не были NaN.
+        timeAxis.Maximum = Math.Max(maxX, 10);
 
         var tempAxis = Model.Axes.OfType<LinearAxis>().First(a => a.Key == "Temp");
         if (_tempSeries.Points.Count > 0)
@@ -170,8 +188,9 @@ public sealed class MonitoringLiveChart
         }
         else
         {
-            tempAxis.Minimum = double.NaN;
-            tempAxis.Maximum = double.NaN;
+            // При отсутствии точек всё равно показываем шкалу под зоны (иначе OxyPlot может не отрисовать аннотации).
+            tempAxis.Minimum = 0;
+            tempAxis.Maximum = Math.Max(125, critC + 15);
         }
 
         _tempSeries.IsVisible = showTemp;
@@ -184,6 +203,8 @@ public sealed class MonitoringLiveChart
     {
         _tempSeries.IsVisible = showTemp;
         _loadSeries.IsVisible = showLoad;
+        if (!showTemp)
+            ClearZones();
         Model.InvalidatePlot(true);
     }
 }

@@ -470,7 +470,8 @@ public sealed class WindowsHardwareProvider : IHardwareProvider
 
                 FillRamTimingSummaryLines();
 
-                return;
+                if (_snapshot.MemoryModules.Count > 0 || !extended)
+                    return;
 
             }
 

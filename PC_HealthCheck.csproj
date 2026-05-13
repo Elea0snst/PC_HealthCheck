@@ -26,6 +26,7 @@
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.1" />
     <PackageReference Include="LibreHardwareMonitorLib" Version="0.9.6" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.5" />
+    <PackageReference Include="Ollama.NET" Version="1.0.6" />
     <PackageReference Include="OxyPlot.Avalonia" Version="2.1.0-Avalonia11" />
     <PackageReference Include="System.Management" Version="10.0.5" />
   </ItemGroup>

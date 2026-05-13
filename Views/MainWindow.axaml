@@ -12,113 +12,189 @@
         Title="PC HealthCheck"
         Width="1320"
         Height="960"
-        Background="#F4F7FB">
+        Background="{DynamicResource AppBackgroundBrush}">
 
+	<Window.Styles>
+		<!-- Status chip coloring (Avalonia: selectors + class bindings) -->
+		<Style Selector="Border#StatusChip">
+			<Setter Property="Background" Value="{DynamicResource CardBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+		</Style>
+		<Style Selector="Border#StatusChip TextBlock">
+			<Setter Property="Foreground" Value="{DynamicResource AccentTextBrush}"/>
+		</Style>
+		<Style Selector="Border#StatusChip.ok">
+			<Setter Property="Background" Value="{DynamicResource StatusOkBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource StatusOkBrush}"/>
+		</Style>
+		<Style Selector="Border#StatusChip.warn">
+			<Setter Property="Background" Value="{DynamicResource StatusWarnBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource StatusWarnBrush}"/>
+		</Style>
+		<Style Selector="Border#StatusChip.critical">
+			<Setter Property="Background" Value="{DynamicResource StatusCriticalBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource StatusCriticalBrush}"/>
+		</Style>
+		<Style Selector="TabItem">
+			<Setter Property="Template">
+				<ControlTemplate>
+					<Border Name="Root"
+							Background="{TemplateBinding Background}"
+							BorderBrush="{TemplateBinding BorderBrush}"
+							BorderThickness="0,0,0,0"
+							Padding="12,8,12,8">
+						<ContentPresenter x:Name="PART_Header"
+										  Content="{TemplateBinding Header}"
+										  ContentTemplate="{TemplateBinding HeaderTemplate}"
+										  VerticalAlignment="Center"
+										  HorizontalAlignment="Center"/>
+					</Border>
+				</ControlTemplate>
+			</Setter>
+		</Style>
+
+		<Style Selector="TabItem:selected">
+			<Setter Property="Template">
+				<ControlTemplate>
+					<Border Name="Root"
+							Background="{TemplateBinding Background}"
+							BorderBrush="{DynamicResource SystemAccentColor}"
+							BorderThickness="0,0,0,2"
+							Padding="12,8,12,6">
+						<ContentPresenter x:Name="PART_Header"
+										  Content="{TemplateBinding Header}"
+										  ContentTemplate="{TemplateBinding HeaderTemplate}"
+										  VerticalAlignment="Center"
+										  HorizontalAlignment="Center">
+							<ContentPresenter.Styles>
+								<Style Selector="TextBlock">
+									<Setter Property="Foreground" Value="{DynamicResource SystemAccentColor}"/>
+									<Setter Property="FontWeight" Value="SemiBold"/>
+								</Style>
+							</ContentPresenter.Styles>
+						</ContentPresenter>
+					</Border>
+				</ControlTemplate>
+			</Setter>
+		</Style>
+
+	</Window.Styles>
+	
     <Design.DataContext>
         <vm:MainWindowViewModel/>
     </Design.DataContext>
 
-    <Grid RowDefinitions="68,*,34">
-        <Border Grid.Row="0" Background="#E8EEF7" BorderBrush="#C8D3E6" BorderThickness="0,0,0,1">
+    <Grid RowDefinitions="68,*,36">
+        <Border Grid.Row="0" Background="{DynamicResource HeaderGradientBrush}" BorderBrush="{DynamicResource DividerBrush}" BorderThickness="0,0,0,1">
             <DockPanel Margin="18,0">
-                <TextBlock DockPanel.Dock="Left" Text="PC HealthCheck" FontSize="24" FontWeight="Bold" VerticalAlignment="Center" Foreground="#0D1B2A"/>
+                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                    <TextBlock Text="PC HealthCheck" Classes="h1" VerticalAlignment="Center"/>
+                    <Border Name="StatusChip" CornerRadius="999" Padding="10,4" BorderThickness="1"
+                            BorderBrush="{DynamicResource BorderBrush}" Background="{DynamicResource CardBrush}"
+                            VerticalAlignment="Center"
+                            Classes.ok="{Binding IsStatusOk}"
+                            Classes.warn="{Binding IsStatusWarn}"
+                            Classes.critical="{Binding IsStatusCritical}">
+                        <TextBlock Text="{Binding StatusLevel}" Foreground="{DynamicResource TextPrimaryBrush}" FontWeight="SemiBold"/>
+                    </Border>
+                </StackPanel>
                 <Button DockPanel.Dock="Right" Content="Снимок" Command="{Binding SnapshotCommand}" Margin="10,0,0,0" VerticalAlignment="Center"/>
             </DockPanel>
         </Border>
 
-        <Border Grid.Row="1" Margin="14,18,14,10" Background="White" BorderBrush="#D8E2F0" BorderThickness="1" CornerRadius="10">
+        <Border Grid.Row="1" Margin="14,18,14,10" Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="12">
             <TabControl Margin="10">
                 <TabItem Header="Дашборд">
                     <ScrollViewer VerticalScrollBarVisibility="Auto">
                         <Grid Margin="8,24,8,8" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto" ColumnDefinitions="*,*">
-                            <Border Grid.Row="0" Grid.ColumnSpan="2" Background="#F7FAFF" BorderBrush="#D6E0EE" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,10">
+                            <Border Grid.Row="0" Grid.ColumnSpan="2" Classes="card" Margin="0,0,0,10">
                                 <StackPanel>
-                                    <TextBlock Text="{Binding StatusText}" FontSize="18" FontWeight="SemiBold" Foreground="#0D1B2A"/>
-                                    <TextBlock Text="{Binding StatusDetails}" Foreground="#1F2D3D" Margin="0,6,0,0"/>
-                                    <TextBlock Text="{Binding LastUpdateLocal, StringFormat=Последнее обновление: {0:HH:mm:ss}}" Foreground="#1F2D3D" Margin="0,4,0,0"/>
+                                    <TextBlock Text="{Binding StatusText}" Classes="h2"/>
+                                    <TextBlock Text="{Binding StatusDetails}" Margin="0,6,0,0"/>
+                                    <TextBlock Text="{Binding LastUpdateLocal, StringFormat=Последнее обновление: {0:HH:mm:ss}}" Classes="muted" Margin="0,4,0,0"/>
                                 </StackPanel>
                             </Border>
 
-                            <Border Grid.Row="1" Grid.Column="0" Background="#F9FCFF" BorderBrush="#D6E0EE" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,10,10">
+                            <Border Grid.Row="1" Grid.Column="0" Classes="card" Margin="0,0,10,10">
                                 <StackPanel>
-                                    <TextBlock Text="CPU" FontSize="16" FontWeight="Bold" Foreground="#0D1B2A"/>
-                                    <TextBlock Text="{Binding CpuHeader}" Foreground="#1F2D3D" Margin="0,6,0,0"/>
-                                    <TextBlock Text="{Binding CpuTempText}" Foreground="#1F2D3D" Margin="0,4,0,0"/>
-                                    <TextBlock Text="{Binding CpuLoadText}" Foreground="#1F2D3D" Margin="0,4,0,10"/>
+                                    <TextBlock Text="CPU" Classes="h2"/>
+                                    <TextBlock Text="{Binding CpuHeader}" Margin="0,6,0,0"/>
+                                    <TextBlock Text="{Binding CpuTempText}" Margin="0,4,0,0"/>
+                                    <TextBlock Text="{Binding CpuLoadText}" Margin="0,4,0,10"/>
                                     <ItemsControl ItemsSource="{Binding CpuDetails}" />
                                 </StackPanel>
                             </Border>
 
-                            <Border Grid.Row="1" Grid.Column="1" Background="#F9FCFF" BorderBrush="#D6E0EE" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,10">
+                            <Border Grid.Row="1" Grid.Column="1" Classes="card" Margin="0,0,0,10">
                                 <StackPanel>
-                                    <TextBlock Text="RAM" FontSize="16" FontWeight="Bold" Foreground="#0D1B2A"/>
-                                    <TextBlock Text="{Binding RamHeader}" Foreground="#1F2D3D" Margin="0,6,0,0"/>
-                                    <TextBlock Text="{Binding RamUsageText}" Foreground="#1F2D3D" Margin="0,4,0,10"/>
+                                    <TextBlock Text="RAM" Classes="h2"/>
+                                    <TextBlock Text="{Binding RamHeader}" Margin="0,6,0,0"/>
+                                    <TextBlock Text="{Binding RamUsageText}" Margin="0,4,0,10"/>
                                     <ItemsControl ItemsSource="{Binding RamDetails}" />
-                                    <TextBlock Text="Тайминги / WMI (не SPD)" FontWeight="SemiBold" Foreground="#0D1B2A" Margin="0,14,0,6"/>
+                                    <TextBlock Text="Тайминги / WMI (не SPD)" Classes="h3" Margin="0,14,0,6"/>
                                     <ItemsControl ItemsSource="{Binding RamTimingDetails}" />
                                 </StackPanel>
                             </Border>
 
-                            <Border Grid.Row="2" Grid.Column="0" Background="#F9FCFF" BorderBrush="#D6E0EE" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,10,10">
+                            <Border Grid.Row="2" Grid.Column="0" Classes="card" Margin="0,0,10,10">
                                 <StackPanel>
-                                    <TextBlock Text="Motherboard / BIOS" FontSize="16" FontWeight="Bold" Foreground="#0D1B2A"/>
+                                    <TextBlock Text="Motherboard / BIOS" Classes="h2"/>
                                     <ItemsControl ItemsSource="{Binding BoardDetails}" Margin="0,8,0,0"/>
                                 </StackPanel>
                             </Border>
 
-                            <Border Grid.Row="2" Grid.Column="1" Background="#F9FCFF" BorderBrush="#D6E0EE" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,10">
+                            <Border Grid.Row="2" Grid.Column="1" Classes="card" Margin="0,0,0,10">
                                 <StackPanel>
-                                    <TextBlock Text="Graphics" FontSize="16" FontWeight="Bold" Foreground="#0D1B2A"/>
+                                    <TextBlock Text="Graphics" Classes="h2"/>
                                     <ItemsControl ItemsSource="{Binding GpuDetails}" Margin="0,8,0,0"/>
                                 </StackPanel>
                             </Border>
 
-                            <Border Grid.Row="3" Grid.Column="0" Background="#F9FCFF" BorderBrush="#D6E0EE" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,10,10">
+                            <Border Grid.Row="3" Grid.Column="0" Classes="card" Margin="0,0,10,10">
                                 <StackPanel>
-                                    <TextBlock Text="Диски и SMART" FontSize="16" FontWeight="Bold" Foreground="#0D1B2A"/>
+                                    <TextBlock Text="Диски и SMART" Classes="h2"/>
                                     <ListBox ItemsSource="{Binding StorageDetails}" Height="160" Margin="0,8,0,0"/>
                                 </StackPanel>
                             </Border>
 
-                            <Border Grid.Row="3" Grid.Column="1" Background="#F9FCFF" BorderBrush="#D6E0EE" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,10">
+                            <Border Grid.Row="3" Grid.Column="1" Classes="card" Margin="0,0,0,10">
                                 <StackPanel>
-                                    <TextBlock Text="Сеть" FontSize="16" FontWeight="Bold" Foreground="#0D1B2A"/>
+                                    <TextBlock Text="Сеть" Classes="h2"/>
                                     <ListBox ItemsSource="{Binding NetworkDetails}" Height="160" Margin="0,8,0,0"/>
                                 </StackPanel>
                             </Border>
 
-                            <Border Grid.Row="4" Grid.Column="0" Background="#F9FCFF" BorderBrush="#D6E0EE" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,10,10">
+                            <Border Grid.Row="4" Grid.Column="0" Classes="card" Margin="0,0,10,10">
                                 <StackPanel>
-                                    <TextBlock Text="SMBIOS: массивы и слоты" FontSize="16" FontWeight="Bold" Foreground="#0D1B2A"/>
+                                    <TextBlock Text="SMBIOS: массивы и слоты" Classes="h2"/>
                                     <ListBox ItemsSource="{Binding SmbMemoryDetails}" Height="140" Margin="0,8,0,0"/>
                                 </StackPanel>
                             </Border>
 
-                            <Border Grid.Row="4" Grid.Column="1" Background="#F9FCFF" BorderBrush="#D6E0EE" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,10">
+                            <Border Grid.Row="4" Grid.Column="1" Classes="card" Margin="0,0,0,10">
                                 <StackPanel>
-                                    <TextBlock Text="PCI-устройства" FontSize="16" FontWeight="Bold" Foreground="#0D1B2A"/>
+                                    <TextBlock Text="PCI-устройства" Classes="h2"/>
                                     <ListBox ItemsSource="{Binding PciDetails}" Height="140" Margin="0,8,0,0"/>
                                 </StackPanel>
                             </Border>
 
-                            <Border Grid.Row="5" Grid.Column="0" Background="#F9FCFF" BorderBrush="#D6E0EE" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,10,10">
+                            <Border Grid.Row="5" Grid.Column="0" Classes="card" Margin="0,0,10,10">
                                 <StackPanel>
-                                    <TextBlock Text="Периферия" FontSize="16" FontWeight="Bold" Foreground="#0D1B2A"/>
+                                    <TextBlock Text="Периферия" Classes="h2"/>
                                     <ListBox ItemsSource="{Binding PeripheralDetails}" Height="120" Margin="0,8,0,0"/>
                                 </StackPanel>
                             </Border>
 
-                            <Border Grid.Row="5" Grid.Column="1" Background="#F9FCFF" BorderBrush="#D6E0EE" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,10">
+                            <Border Grid.Row="5" Grid.Column="1" Classes="card" Margin="0,0,0,10">
                                 <StackPanel>
-                                    <TextBlock Text="Принтеры" FontSize="16" FontWeight="Bold" Foreground="#0D1B2A"/>
+                                    <TextBlock Text="Принтеры" Classes="h2"/>
                                     <ListBox ItemsSource="{Binding PrinterDetails}" Height="120" Margin="0,8,0,0"/>
                                 </StackPanel>
                             </Border>
 
-                            <Border Grid.Row="6" Grid.ColumnSpan="2" Background="#F9FCFF" BorderBrush="#D6E0EE" BorderThickness="1" CornerRadius="8" Padding="12">
+                            <Border Grid.Row="6" Grid.ColumnSpan="2" Classes="card">
                                 <StackPanel>
-                                    <TextBlock Text="Сырые сенсоры (для диагностики температуры)" FontSize="16" FontWeight="Bold" Foreground="#0D1B2A"/>
+                                    <TextBlock Text="Сырые сенсоры (для диагностики температуры)" Classes="h2"/>
                                     <ListBox ItemsSource="{Binding SensorDetails}" Height="200" Margin="0,8,0,0"/>
                                 </StackPanel>
                             </Border>
@@ -129,16 +205,16 @@
                 <TabItem Header="Мониторинг">
                     <ScrollViewer VerticalScrollBarVisibility="Auto">
                         <StackPanel Margin="10" Spacing="12">
-                            <Border Background="#F9FCFF" BorderBrush="#D6E0EE" BorderThickness="1" CornerRadius="8" Padding="16">
+                            <Border Classes="card">
                                 <StackPanel>
-                                    <TextBlock Text="Сессионная статистика (ТЗ 2.1.2 — мин./макс./средн.)" FontSize="18" FontWeight="Bold" Foreground="#0D1B2A"/>
-                                    <TextBlock Text="{Binding CpuTempSessionSummary}" TextWrapping="Wrap" Margin="0,12,0,8" Foreground="#1F2D3D"/>
-                                    <TextBlock Text="{Binding MonitoringNote}" TextWrapping="Wrap" Foreground="#415A77" FontSize="13"/>
+                                    <TextBlock Text="Сессионная статистика (ТЗ 2.1.2 — мин./макс./средн.)" Classes="h2"/>
+                                    <TextBlock Text="{Binding CpuTempSessionSummary}" TextWrapping="Wrap" Margin="0,12,0,8"/>
+                                    <TextBlock Text="{Binding MonitoringNote}" TextWrapping="Wrap" Classes="muted"/>
                                 </StackPanel>
                             </Border>
-                            <Border Background="#F9FCFF" BorderBrush="#D6E0EE" BorderThickness="1" CornerRadius="8" Padding="16">
+                            <Border Classes="card">
                                 <StackPanel>
-                                    <TextBlock Text="График в реальном времени (OxyPlot)" FontSize="16" FontWeight="Bold" Foreground="#0D1B2A"/>
+                                    <TextBlock Text="График в реальном времени (OxyPlot)" Classes="h2"/>
                                     <StackPanel Orientation="Horizontal" Spacing="16" Margin="0,10,0,8">
                                         <CheckBox Content="Канал: температура CPU" IsChecked="{Binding ChartShowCpuTemp, Mode=TwoWay}"/>
                                         <CheckBox Content="Канал: загрузка CPU" IsChecked="{Binding ChartShowCpuLoad, Mode=TwoWay}"/>
@@ -146,24 +222,24 @@
                                     <oxy:PlotView Model="{Binding MonitoringPlotModel}" Height="360" MinHeight="280"/>
                                 </StackPanel>
                             </Border>
-                            <Border Background="#F9FCFF" BorderBrush="#D6E0EE" BorderThickness="1" CornerRadius="8" Padding="16">
+                            <Border Classes="card">
                                 <StackPanel Spacing="10">
-                                    <TextBlock Text="Частоты по ядрам (CPU)" FontSize="15" FontWeight="SemiBold" Foreground="#0D1B2A"/>
+                                    <TextBlock Text="Частоты по ядрам (CPU)" Classes="h3"/>
                                     <ListBox ItemsSource="{Binding CoreClockDetails}" Height="120"/>
-                                    <TextBlock Text="Напряжения по ядрам / VID" FontSize="15" FontWeight="SemiBold" Foreground="#0D1B2A"/>
+                                    <TextBlock Text="Напряжения по ядрам / VID" Classes="h3"/>
                                     <ListBox ItemsSource="{Binding CoreVoltageDetails}" Height="100"/>
-                                    <TextBlock Text="VRM / материнская плата / PCH" FontSize="15" FontWeight="SemiBold" Foreground="#0D1B2A"/>
+                                    <TextBlock Text="VRM / материнская плата / PCH" Classes="h3"/>
                                     <ListBox ItemsSource="{Binding VrmChipsetDetails}" Height="100"/>
-                                    <TextBlock Text="Вентиляторы (RPM)" FontSize="15" FontWeight="SemiBold" Foreground="#0D1B2A"/>
+                                    <TextBlock Text="Вентиляторы (RPM)" Classes="h3"/>
                                     <ListBox ItemsSource="{Binding FanSensorDetails}" Height="100"/>
-                                    <TextBlock Text="Температура накопителей / NVMe" FontSize="15" FontWeight="SemiBold" Foreground="#0D1B2A"/>
+                                    <TextBlock Text="Температура накопителей / NVMe" Classes="h3"/>
                                     <ListBox ItemsSource="{Binding StorageTempDetails}" Height="100"/>
                                 </StackPanel>
                             </Border>
-                            <Border Background="#F9FCFF" BorderBrush="#D6E0EE" BorderThickness="1" CornerRadius="8" Padding="16">
+                            <Border Classes="card">
                                 <StackPanel>
-                                    <TextBlock Text="Все сенсоры LibreHardwareMonitor" FontSize="16" FontWeight="Bold" Foreground="#0D1B2A"/>
-                                    <TextBlock Text="Полный список (включая GPU и прочее)." TextWrapping="Wrap" Foreground="#415A77" FontSize="12" Margin="0,6,0,8"/>
+                                    <TextBlock Text="Все сенсоры LibreHardwareMonitor" Classes="h2"/>
+                                    <TextBlock Text="Полный список (включая GPU и прочее)." TextWrapping="Wrap" Classes="muted" Margin="0,6,0,8"/>
                                     <ListBox ItemsSource="{Binding HardwareSensorDetails}" Height="220"/>
                                 </StackPanel>
                             </Border>
@@ -174,86 +250,236 @@
                 <TabItem Header="Утилиты">
                     <ScrollViewer VerticalScrollBarVisibility="Auto">
                         <StackPanel Margin="10" Spacing="14">
-                            <TextBlock Text="Системные утилиты (Windows)" FontSize="18" FontWeight="Bold" Foreground="#0D1B2A"/>
-                            <TextBlock TextWrapping="Wrap" Foreground="#415A77" FontSize="12"
+                            <TextBlock Text="Системные утилиты (Windows)" Classes="h2"/>
+                            <TextBlock TextWrapping="Wrap" Classes="muted"
                                        Text="Процессы — топ по рабочему набору. Сеть — счётчики с момента загрузки ОС. Автозагрузка — Run/RunOnce и папки Startup. Очистка temp — только файлы в корне %TEMP% и LocalAppData\Temp старше 7 суток (без рекурсии)."/>
-                            <Border Background="#F9FCFF" BorderBrush="#D6E0EE" BorderThickness="1" CornerRadius="8" Padding="12">
+                            <Border Classes="card">
                                 <StackPanel Spacing="8">
-                                    <TextBlock Text="Процессы" FontWeight="SemiBold" Foreground="#0D1B2A"/>
+                                    <TextBlock Text="Процессы" Classes="h3"/>
                                     <Button Content="Обновить список" Command="{Binding RefreshProcessesCommand}" HorizontalAlignment="Left" Width="160"/>
                                     <ListBox ItemsSource="{Binding ProcessLines}" Height="220"/>
                                 </StackPanel>
                             </Border>
-                            <Border Background="#F9FCFF" BorderBrush="#D6E0EE" BorderThickness="1" CornerRadius="8" Padding="12">
+                            <Border Classes="card">
                                 <StackPanel Spacing="8">
-                                    <TextBlock Text="Сеть (интерфейсы)" FontWeight="SemiBold" Foreground="#0D1B2A"/>
+                                    <TextBlock Text="Сеть (интерфейсы)" Classes="h3"/>
                                     <Button Content="Обновить счётчики" Command="{Binding RefreshNetworkStatsCommand}" HorizontalAlignment="Left" Width="160"/>
                                     <ListBox ItemsSource="{Binding NetworkStatLines}" Height="140"/>
                                 </StackPanel>
                             </Border>
-                            <Border Background="#F9FCFF" BorderBrush="#D6E0EE" BorderThickness="1" CornerRadius="8" Padding="12">
+                            <Border Classes="card">
                                 <StackPanel Spacing="8">
-                                    <TextBlock Text="Автозагрузка" FontWeight="SemiBold" Foreground="#0D1B2A"/>
+                                    <TextBlock Text="Автозагрузка" Classes="h3"/>
                                     <Button Content="Обновить" Command="{Binding RefreshStartupCommand}" HorizontalAlignment="Left" Width="160"/>
                                     <ListBox ItemsSource="{Binding StartupLines}" Height="200"/>
                                 </StackPanel>
                             </Border>
-                            <Border Background="#F9FCFF" BorderBrush="#D6E0EE" BorderThickness="1" CornerRadius="8" Padding="12">
+                            <Border Classes="card">
                                 <StackPanel Spacing="8">
-                                    <TextBlock Text="Временные файлы" FontWeight="SemiBold" Foreground="#0D1B2A"/>
+                                    <TextBlock Text="Временные файлы" Classes="h3"/>
                                     <Button Content="Очистить старые (7 дн., только корень temp)" Command="{Binding CleanupTempCommand}" HorizontalAlignment="Left" Width="320"/>
-                                    <TextBlock Text="{Binding UtilitiesStatus}" TextWrapping="Wrap" Foreground="#1F2D3D"/>
+                                    <TextBlock Text="{Binding UtilitiesStatus}" TextWrapping="Wrap"/>
                                 </StackPanel>
                             </Border>
                         </StackPanel>
                     </ScrollViewer>
                 </TabItem>
 
-                <TabItem Header="Диагностика">
-                    <Grid Margin="10" RowDefinitions="Auto,*,Auto,*">
-                        <Border Grid.Row="0" Background="#F9FCFF" BorderBrush="#D6E0EE" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,10">
-                            <StackPanel>
-                                <TextBlock Text="Автоматическая проверка (ТЗ 2.3)" FontSize="18" FontWeight="Bold" Foreground="#0D1B2A"/>
-                                <TextBlock Text="Учитываются пороги температуры CPU с вкладки «Настройки». Нажмите «Проверить сейчас» по актуальному снимку." TextWrapping="Wrap" Margin="0,8,0,10" Foreground="#1F2D3D"/>
-                                <Button Content="Проверить сейчас" Command="{Binding RunDiagnosticsCommand}" HorizontalAlignment="Left" Width="180"/>
-                            </StackPanel>
-                        </Border>
-                        <Border Grid.Row="1" Background="#F9FCFF" BorderBrush="#D6E0EE" BorderThickness="1" CornerRadius="8" Padding="12">
-                            <ListBox ItemsSource="{Binding DiagnosticDetails}"/>
-                        </Border>
-                        <TextBlock Grid.Row="2" Text="Уведомления и история алертов" FontSize="16" FontWeight="Bold" Foreground="#0D1B2A" Margin="0,12,0,6"/>
-                        <Border Grid.Row="3" Background="#F9FCFF" BorderBrush="#D6E0EE" BorderThickness="1" CornerRadius="8" Padding="12">
-                            <ListBox ItemsSource="{Binding AlertHistoryLines}" Height="180"/>
-                        </Border>
-                    </Grid>
-                </TabItem>
+				<TabItem Header="Диагностика">
+					<ScrollViewer VerticalScrollBarVisibility="Auto">
+						<Grid Margin="10" RowDefinitions="Auto,Auto,Auto,Auto">
+							<Border Grid.Row="0" Classes="card" Margin="0,0,0,10">
+								<StackPanel>
+									<TextBlock Text="Автоматическая проверка (ТЗ 2.3)" Classes="h2"/>
+									<TextBlock Text="Учитываются пороги температуры CPU с вкладки «Настройки». Нажмите «Проверить сейчас» по актуальному снимку." TextWrapping="Wrap" Margin="0,8,0,10"/>
+									<Button Content="Проверить сейчас" Command="{Binding RunDiagnosticsCommand}" HorizontalAlignment="Left" Width="180"/>
+								</StackPanel>
+							</Border>
 
+							<Border Grid.Row="1" Classes="card" Margin="0,0,0,10">
+								<StackPanel>
+									<TextBlock Text="Результаты диагностики" Classes="h2" Margin="0,0,0,8"/>
+									<ScrollViewer Height="200" VerticalScrollBarVisibility="Auto">
+										<ListBox ItemsSource="{Binding DiagnosticDetails}">
+											<ListBox.ItemTemplate>
+												<DataTemplate>
+													<TextBlock Text="{Binding}" TextWrapping="Wrap" TextTrimming="None" Margin="0,2,0,2"/>
+												</DataTemplate>
+											</ListBox.ItemTemplate>
+										</ListBox>
+									</ScrollViewer>
+								</StackPanel>
+							</Border>
+
+							<Border Grid.Row="2" Classes="card" Margin="0,0,0,10">
+								<StackPanel>
+									<TextBlock Text="Уведомления и история алертов" Classes="h2" Margin="0,0,0,8"/>
+									<ScrollViewer Height="180" VerticalScrollBarVisibility="Auto">
+										<ListBox ItemsSource="{Binding AlertHistoryLines}">
+											<ListBox.ItemTemplate>
+												<DataTemplate>
+													<TextBlock Text="{Binding}" TextWrapping="Wrap" TextTrimming="None" Margin="0,2,0,2"/>
+												</DataTemplate>
+											</ListBox.ItemTemplate>
+										</ListBox>
+									</ScrollViewer>
+								</StackPanel>
+							</Border>
+
+							<Border Grid.Row="3" Classes="card">
+								<StackPanel>
+									<TextBlock Text="События (троттлинг/перегрев/авто-остановки)" Classes="h2" Margin="0,0,0,8"/>
+									<ScrollViewer Height="180" VerticalScrollBarVisibility="Auto">
+										<ListBox ItemsSource="{Binding EventHistoryLines}">
+											<ListBox.ItemTemplate>
+												<DataTemplate>
+													<TextBlock Text="{Binding}" TextWrapping="Wrap" TextTrimming="None" Margin="0,2,0,2"/>
+												</DataTemplate>
+											</ListBox.ItemTemplate>
+										</ListBox>
+									</ScrollViewer>
+								</StackPanel>
+							</Border>
+						</Grid>
+					</ScrollViewer>
+				</TabItem>
+
+				<TabItem Header="AI Аналитика">
+					<ScrollViewer VerticalScrollBarVisibility="Auto">
+						<StackPanel Margin="10" Spacing="14">
+
+							<!-- Настройки Ollama -->
+							<Border Classes="card">
+								<StackPanel Spacing="8">
+									<TextBlock Text="Настройки AI" FontWeight="SemiBold" FontSize="14"/>
+									<Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto" Margin="0,8,0,0">
+										<TextBlock Grid.Row="0" Grid.Column="0" Text="Ollama URL:" VerticalAlignment="Center" Margin="0,0,10,0"/>
+										<TextBox Grid.Row="0" Grid.Column="1" Text="{Binding OllamaBaseUrlText, Mode=TwoWay}" Width="300" HorizontalAlignment="Left"/>
+
+										<TextBlock Grid.Row="1" Grid.Column="0" Text="Модель:" VerticalAlignment="Center" Margin="0,10,10,10"/>
+										<TextBox Grid.Row="1" Grid.Column="1" Text="{Binding OllamaModelText, Mode=TwoWay}" Width="300" HorizontalAlignment="Left" Margin="0,10,0,10"/>
+
+										<StackPanel Grid.Row="2" Grid.ColumnSpan="2" Orientation="Horizontal" Spacing="12">
+											<Button Content="Проверить Ollama" Command="{Binding CheckAiSetupCommand}" Width="140"/>
+											<TextBlock Text="{Binding AiSetupStatusText}" VerticalAlignment="Center" TextWrapping="Wrap"
+													   Foreground="{DynamicResource TextSecondaryBrush}"/>
+										</StackPanel>
+									</Grid>
+								</StackPanel>
+							</Border>
+
+							<!-- Вопрос пользователя -->
+							<Border Classes="card">
+								<StackPanel Spacing="8">
+									<TextBlock Text="Ваш вопрос" FontWeight="SemiBold" FontSize="14"/>
+									<TextBox Text="{Binding AiQuestionText, Mode=TwoWay}"
+											 AcceptsReturn="True"
+											 TextWrapping="Wrap"
+											 MinHeight="80"
+											 MaxHeight="150"
+											 FontSize="13"
+											 Watermark="Например: почему греется компьютер? или как ускорить работу ПК?"
+											 VerticalAlignment="Top"
+											 VerticalContentAlignment="Top"/>
+									<Button Content="Задать вопрос AI"
+											Command="{Binding RunAiDiagnosticsCommand}"
+											HorizontalAlignment="Left"
+											Width="220"
+											FontSize="13"/>
+								</StackPanel>
+							</Border>
+
+							<!-- Ответ AI - как сырой ответ, но больше и чище -->
+							<Border Classes="card">
+								<StackPanel Spacing="8">
+									<TextBlock Text="Ответ AI" FontWeight="SemiBold" FontSize="14"/>
+									<Border Background="{DynamicResource CardBrush}"
+											CornerRadius="6"
+											BorderThickness="1"
+											BorderBrush="{DynamicResource BorderBrush}"
+											Padding="10">
+										<ScrollViewer MaxHeight="500"
+													  VerticalScrollBarVisibility="Auto"
+													  HorizontalScrollBarVisibility="Auto">
+											<TextBox Text="{Binding AiStatusText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+													 AcceptsReturn="True"
+													 TextWrapping="Wrap"
+													 FontSize="13"
+													 FontFamily="Segoe UI, sans-serif"
+													 IsReadOnly="True"
+													 Background="Transparent"
+													 BorderThickness="0"
+													 VerticalAlignment="Top"
+													 VerticalContentAlignment="Top"
+													 HorizontalAlignment="Stretch"
+													 HorizontalContentAlignment="Stretch"/>
+										</ScrollViewer>
+									</Border>
+								</StackPanel>
+							</Border>
+
+							<!-- Raw ответ -->
+							<Border Classes="card">
+								<StackPanel Spacing="8">
+									<TextBlock Text="Технический ответ (сырой ответ)"
+											   FontWeight="SemiBold"
+											   FontSize="12"
+											   Foreground="{DynamicResource TextSecondaryBrush}"/>
+									<Border Background="{DynamicResource CardBrush}"
+											CornerRadius="6"
+											BorderThickness="1"
+											BorderBrush="{DynamicResource BorderBrush}"
+											Padding="10">
+										<ScrollViewer MaxHeight="150"
+													  VerticalScrollBarVisibility="Auto"
+													  HorizontalScrollBarVisibility="Auto">
+											<TextBox Text="{Binding AiRawJsonText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+													 AcceptsReturn="True"
+													 TextWrapping="Wrap"
+													 FontSize="10"
+													 FontFamily="Consolas, monospace"
+													 IsReadOnly="True"
+													 Background="Transparent"
+													 BorderThickness="0"
+													 VerticalAlignment="Top"
+													 VerticalContentAlignment="Top"/>
+										</ScrollViewer>
+									</Border>
+								</StackPanel>
+							</Border>
+
+						</StackPanel>
+					</ScrollViewer>
+				</TabItem>
+				
                 <TabItem Header="Тесты">
                     <ScrollViewer VerticalScrollBarVisibility="Auto">
                         <StackPanel Margin="10" Spacing="14">
                             <Grid ColumnDefinitions="2*,*">
-                                <Border Grid.Column="0" Background="#F9FCFF" BorderBrush="#D6E0EE" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,10,0">
+                                <Border Grid.Column="0" Classes="card" Margin="0,0,10,0">
                                     <StackPanel>
-                                        <TextBlock Text="Стресс-тесты" FontSize="18" FontWeight="Bold" Foreground="#0D1B2A"/>
-                                        <Button Content="Запустить CPU тест (60с)" Command="{Binding StartCpuStressCommand}" Margin="0,12,0,8"/>
-                                        <Button Content="Запустить RAM тест (60с)" Command="{Binding StartRamStressCommand}" Margin="0,0,0,8"/>
-                                        <Button Content="Запустить GPU тест (60с)" Command="{Binding StartGpuStressCommand}" Margin="0,0,0,8"/>
-                                        <Button Content="Запустить Disk тест (60с)" Command="{Binding StartDiskStressCommand}" Margin="0,0,0,8"/>
-                                        <Button Content="Остановить" Command="{Binding StopStressCommand}" />
+                                        <TextBlock Text="Стресс-тесты" Classes="h2"/>
+                                        <TextBlock Text="Профиль теста" Classes="muted" Margin="0,10,0,4"/>
+                                        <ComboBox ItemsSource="{Binding StressProfileOptions}" SelectedItem="{Binding SelectedStressProfile}" MinWidth="260"/>
+                                        <Button Content="Запустить CPU тест" Command="{Binding StartCpuStressCommand}" Margin="0,12,0,8"/>
+                                        <Button Content="Запустить RAM тест" Command="{Binding StartRamStressCommand}" Margin="0,0,0,8"/>
+                                        <Button Content="Запустить GPU тест" Command="{Binding StartGpuStressCommand}" Margin="0,0,0,8"/>
+                                        <Button Content="Запустить Disk тест" Command="{Binding StartDiskStressCommand}" Margin="0,0,0,8"/>
+                                        <Button Content="Остановить" Command="{Binding StopStressCommand}" Classes="secondary"/>
                                     </StackPanel>
                                 </Border>
-                                <Border Grid.Column="1" Background="#F9FCFF" BorderBrush="#D6E0EE" BorderThickness="1" CornerRadius="8" Padding="12">
+                                <Border Grid.Column="1" Classes="card">
                                     <StackPanel>
-                                        <TextBlock Text="Прогресс" FontSize="18" FontWeight="Bold" Foreground="#0D1B2A"/>
+                                        <TextBlock Text="Прогресс" Classes="h2"/>
                                         <ProgressBar Value="{Binding StressProgress}" Minimum="0" Maximum="100" Height="14" Margin="0,12,0,0"/>
-                                        <TextBlock Text="{Binding StressStatus}" Foreground="#1F2D3D" Margin="0,10,0,0"/>
+                                        <TextBlock Text="{Binding StressStatus}" Margin="0,10,0,0"/>
                                     </StackPanel>
                                 </Border>
                             </Grid>
-                            <Border Background="#F9FCFF" BorderBrush="#D6E0EE" BorderThickness="1" CornerRadius="8" Padding="12">
+                            <Border Classes="card">
                                 <StackPanel Spacing="10">
-                                    <TextBlock Text="Быстрый бенчмарк и сравнение с эталоном" FontSize="18" FontWeight="Bold" Foreground="#0D1B2A"/>
-                                    <TextBlock TextWrapping="Wrap" Foreground="#415A77" FontSize="12"
+                                    <TextBlock Text="Быстрый бенчмарк и сравнение с эталоном" Classes="h2"/>
+                                    <TextBlock TextWrapping="Wrap" Classes="muted"
                                                Text="~4 с: скаляр FP на CPU и копирование RAM. Эталон подбирается по строке модели CPU из встроенной таблицы (ориентировочно)."/>
                                     <Button Content="Запустить бенчмарк" Command="{Binding RunBenchmarkCommand}" HorizontalAlignment="Left" Width="200"/>
                                     <ListBox ItemsSource="{Binding BenchmarkResultLines}" MinHeight="160" MaxHeight="280"/>
@@ -265,25 +491,25 @@
 
                 <TabItem Header="Отчёты">
                     <Grid Margin="10" RowDefinitions="Auto,*">
-                        <TextBlock Grid.Row="0" Text="Форматы: TXT, HTML, CSV, JSON (ТЗ 2.4.2). PDF — экспорт через «Печать в PDF» из браузера по сохранённому HTML." TextWrapping="Wrap" Foreground="#415A77" Margin="0,0,0,10"/>
+                        <TextBlock Grid.Row="0" Text="Форматы: TXT, HTML, CSV, JSON (ТЗ 2.4.2). PDF — экспорт через «Печать в PDF» из браузера по сохранённому HTML." TextWrapping="Wrap" Classes="muted" Margin="0,0,0,10"/>
                         <Grid Grid.Row="1" ColumnDefinitions="*,*">
-                            <Border Grid.Column="0" Background="#F9FCFF" BorderBrush="#D6E0EE" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,10,0">
+                            <Border Grid.Column="0" Classes="card" Margin="0,0,10,0">
                                 <StackPanel>
-                                    <TextBlock Text="Формат" FontSize="16" FontWeight="Bold" Foreground="#0D1B2A"/>
+                                    <TextBlock Text="Формат" Classes="h2"/>
                                     <ComboBox ItemsSource="{Binding ReportFormatOptions}" SelectedItem="{Binding SelectedReportFormat}" Margin="0,10,0,10" MinWidth="160"/>
-                                    <TextBlock Text="Комментарий включается в TXT/HTML/CSV (ТЗ 2.4.1). Текст задайте на вкладке «Настройки»." TextWrapping="Wrap" FontSize="12" Foreground="#415A77" Margin="0,0,0,8"/>
+                                    <TextBlock Text="Комментарий включается в TXT/HTML/CSV (ТЗ 2.4.1). Текст задайте на вкладке «Настройки»." TextWrapping="Wrap" Classes="muted" Margin="0,0,0,8"/>
                                     <Button Content="Сформировать отчёт" Command="{Binding GenerateReportCommand}"/>
-                                    <TextBlock Text="Сравнение «до/после» (ТЗ 2.4.1)" FontSize="14" FontWeight="SemiBold" Foreground="#0D1B2A" Margin="0,14,0,6"/>
+                                    <TextBlock Text="Сравнение «до/после» (ТЗ 2.4.1)" Classes="h3" Margin="0,14,0,6"/>
                                     <StackPanel Orientation="Horizontal" Spacing="8">
-                                        <Button Content="Сохранить как «До»" Command="{Binding SaveBaselineSnapshotCommand}" Width="170"/>
+                                        <Button Content="Сохранить как «До»" Command="{Binding SaveBaselineSnapshotCommand}" Width="170" Classes="secondary"/>
                                         <Button Content="Сформировать «До/После»" Command="{Binding GenerateComparisonReportCommand}" Width="220"/>
                                     </StackPanel>
                                 </StackPanel>
                             </Border>
-                            <Border Grid.Column="1" Background="#F9FCFF" BorderBrush="#D6E0EE" BorderThickness="1" CornerRadius="8" Padding="12">
+                            <Border Grid.Column="1" Classes="card">
                                 <StackPanel Spacing="8">
-                                    <TextBlock Text="{Binding LastReportPath, StringFormat=Сохранено: {0}}" TextWrapping="Wrap" Foreground="#1F2D3D"/>
-                                    <TextBlock Text="{Binding ComparisonStatusText}" TextWrapping="Wrap" Foreground="#1F2D3D"/>
+                                    <TextBlock Text="{Binding LastReportPath, StringFormat=Сохранено: {0}}" TextWrapping="Wrap"/>
+                                    <TextBlock Text="{Binding ComparisonStatusText}" TextWrapping="Wrap"/>
                                 </StackPanel>
                             </Border>
                         </Grid>
@@ -293,26 +519,32 @@
                 <TabItem Header="Настройки">
                     <ScrollViewer VerticalScrollBarVisibility="Auto">
                         <Grid Margin="10" ColumnDefinitions="*,*" MaxWidth="920">
-                            <Border Grid.Column="0" Background="#F9FCFF" BorderBrush="#D6E0EE" BorderThickness="1" CornerRadius="8" Padding="14" Margin="0,0,10,10">
+                            <Border Grid.Column="0" Classes="card" Margin="0,0,10,10">
                                 <StackPanel>
-                                    <TextBlock Text="Мониторинг" FontSize="16" FontWeight="Bold" Foreground="#0D1B2A"/>
-                                    <TextBlock Text="Интервал опроса, сек (1–3600)" Margin="0,10,0,4" Foreground="#1F2D3D"/>
+                                    <TextBlock Text="Мониторинг" Classes="h2"/>
+                                    <TextBlock Text="Интервал опроса, сек (1–3600)" Margin="0,10,0,4"/>
                                     <TextBox Text="{Binding MonitoringIntervalText, Mode=TwoWay}" Width="140" HorizontalAlignment="Left"/>
-                                    <TextBlock Text="Порог предупреждения CPU, °C" Margin="0,14,0,4" Foreground="#1F2D3D"/>
+                                    <TextBlock Text="Порог предупреждения CPU, °C" Margin="0,14,0,4"/>
                                     <TextBox Text="{Binding CpuTempWarningText, Mode=TwoWay}" Width="140" HorizontalAlignment="Left"/>
-                                    <TextBlock Text="Критический порог CPU, °C" Margin="0,14,0,4" Foreground="#1F2D3D"/>
+                                    <TextBlock Text="Критический порог CPU, °C" Margin="0,14,0,4"/>
                                     <TextBox Text="{Binding CpuTempCriticalText, Mode=TwoWay}" Width="140" HorizontalAlignment="Left"/>
                                     <Button Content="Применить и сохранить" Command="{Binding ApplySettingsCommand}" Width="200" HorizontalAlignment="Left" Margin="0,18,0,0"/>
-                                    <TextBlock Text="Настройки пишутся в %LocalAppData%\PC HealthCheck\settings.json" FontSize="12" Foreground="#415A77" Margin="0,10,0,0" TextWrapping="Wrap"/>
+                                    <TextBlock Text="Настройки пишутся в %LocalAppData%\PC HealthCheck\settings.json" Classes="muted" Margin="0,10,0,0" TextWrapping="Wrap"/>
                                 </StackPanel>
                             </Border>
-                            <Border Grid.Column="1" Background="#F9FCFF" BorderBrush="#D6E0EE" BorderThickness="1" CornerRadius="8" Padding="14" Margin="0,0,0,10">
+                            <Border Grid.Column="1" Classes="card" Margin="0,0,0,10">
                                 <StackPanel>
-                                    <TextBlock Text="Оформление и отчёты" FontSize="16" FontWeight="Bold" Foreground="#0D1B2A"/>
+                                    <TextBlock Text="Оформление и отчёты" Classes="h2"/>
                                     <CheckBox Content="Тёмная тема (ТЗ 2.5.2)" IsChecked="{Binding UseDarkTheme, Mode=TwoWay}" Margin="0,12,0,0"/>
                                     <CheckBox Content="Я понимаю риски и подтверждаю запуск стресс-тестов (ТЗ 6.2)" IsChecked="{Binding StressConfirmationAccepted, Mode=TwoWay}" Margin="0,10,0,0"/>
-                                    <TextBlock Text="Комментарий для отчёта (ТЗ 2.4.1)" Margin="0,16,0,4" Foreground="#1F2D3D"/>
+                                    <TextBlock Text="Комментарий для отчёта (ТЗ 2.4.1)" Margin="0,16,0,4"/>
                                     <TextBox Text="{Binding ReportCommentText, Mode=TwoWay}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="72" MaxHeight="200"/>
+
+                                    <TextBlock Text="AI (Ollama)" Classes="h3" Margin="0,18,0,6"/>
+                                    <TextBlock Text="Base URL (пример: http://localhost:11434)" Classes="muted" />
+                                    <TextBox Text="{Binding OllamaBaseUrlText, Mode=TwoWay}" Margin="0,6,0,0"/>
+                                    <TextBlock Text="Модель (пример: llama3.2)" Classes="muted" Margin="0,10,0,0"/>
+                                    <TextBox Text="{Binding OllamaModelText, Mode=TwoWay}" Margin="0,6,0,0"/>
                                 </StackPanel>
                             </Border>
                         </Grid>
@@ -321,10 +553,10 @@
             </TabControl>
         </Border>
 
-        <Border Grid.Row="2" Background="#E8EEF7" BorderBrush="#C8D3E6" BorderThickness="0,1,0,0">
+        <Border Grid.Row="2" Background="{DynamicResource HeaderBackgroundBrush}" BorderBrush="{DynamicResource DividerBrush}" BorderThickness="0,1,0,0">
             <DockPanel Margin="10,0">
-                <TextBlock Text="{Binding StatusText}" VerticalAlignment="Center" Foreground="#0D1B2A"/>
-                <TextBlock DockPanel.Dock="Right" Text="{Binding StatusDetails}" VerticalAlignment="Center" Foreground="#1F2D3D"/>
+                <TextBlock Text="{Binding StatusText}" VerticalAlignment="Center" Foreground="{DynamicResource TextPrimaryBrush}"/>
+                <TextBlock DockPanel.Dock="Right" Text="{Binding StatusDetails}" VerticalAlignment="Center" Classes="muted"/>
             </DockPanel>
         </Border>
     </Grid>

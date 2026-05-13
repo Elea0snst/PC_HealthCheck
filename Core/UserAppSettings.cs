@@ -11,4 +11,10 @@ public sealed class UserAppSettings
     public bool UseDarkTheme { get; set; }
     /// <summary>Комментарий к отчёту (ТЗ 2.4.1).</summary>
     public string ReportComment { get; set; } = "";
+
+    /// <summary>URL локального Ollama (по умолчанию localhost).</summary>
+    public string OllamaBaseUrl { get; set; } = "http://localhost:11434";
+
+    /// <summary>Модель Ollama для AI-диагностики.</summary>
+    public string OllamaModel { get; set; } = "llama3.2";
 }

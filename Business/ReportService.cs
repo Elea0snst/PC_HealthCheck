@@ -11,6 +11,7 @@ public enum ReportFormat
     Txt,
     Html,
     Json,
+    Md,
     /// <summary>Табличный экспорт (ТЗ 2.4.2).</summary>
     Csv
 }
@@ -36,6 +37,7 @@ public sealed class ReportService
             ReportFormat.Txt => BuildTxt(s, userComment),
             ReportFormat.Html => BuildHtml(s, userComment),
             ReportFormat.Json => JsonSerializer.Serialize(s, JsonOpts),
+            ReportFormat.Md => BuildMarkdown(s, userComment),
             ReportFormat.Csv => BuildCsv(s, userComment),
             _ => BuildTxt(s, userComment)
         };
@@ -55,6 +57,7 @@ public sealed class ReportService
             ReportFormat.Txt => BuildComparisonTxt(cmp, userComment),
             ReportFormat.Html => BuildComparisonHtml(cmp, userComment),
             ReportFormat.Json => JsonSerializer.Serialize(cmp, JsonOpts),
+            ReportFormat.Md => BuildComparisonMarkdown(cmp, userComment),
             ReportFormat.Csv => BuildComparisonCsv(cmp, userComment),
             _ => BuildComparisonTxt(cmp, userComment)
         };
@@ -66,6 +69,7 @@ public sealed class ReportService
         {
             ReportFormat.Txt => "txt",
             ReportFormat.Html => "html",
+            ReportFormat.Md => "md",
             ReportFormat.Csv => "csv",
             _ => "json"
         };
@@ -346,6 +350,91 @@ public sealed class ReportService
         return sb.ToString();
     }
 
+    private static string BuildMarkdown(DeviceSnapshot s, string? userComment)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("## PC HealthCheck — отчёт");
+        sb.AppendLine();
+        sb.AppendLine($"- **Дата (локально)**: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+        sb.AppendLine($"- **CPU**: {s.CpuName}");
+        sb.AppendLine($"- **CPU temp/load**: {(s.CpuTemperatureC?.ToString("F1") ?? "N/A")} °C / {(s.CpuLoadPercent?.ToString("F0") ?? "N/A")} %");
+        sb.AppendLine($"- **RAM**: {s.RamType}, {FmtGb(s.TotalRamBytes)} GB total, {FmtGb(s.FreeRamBytes)} GB free, {s.RamUsagePercent:F1}% used");
+        sb.AppendLine();
+
+        if (!string.IsNullOrWhiteSpace(userComment))
+        {
+            sb.AppendLine("### Комментарий пользователя");
+            sb.AppendLine();
+            sb.AppendLine(userComment.Trim());
+            sb.AppendLine();
+        }
+
+        sb.AppendLine("### CPU");
+        sb.AppendLine();
+        sb.AppendLine($"- Производитель: {s.CpuManufacturer}");
+        sb.AppendLine($"- Ядра/потоки: {s.CpuCores}/{s.CpuThreads}");
+        sb.AppendLine($"- Max clock: {s.CpuMaxClockMHz} MHz");
+        sb.AppendLine($"- Family/Model/Stepping: {s.CpuFamily}/{s.CpuModel}/{s.CpuStepping}");
+        if (!string.IsNullOrEmpty(s.CpuMicroarchitectureHint))
+            sb.AppendLine($"- Микроархитектура (hint): {s.CpuMicroarchitectureHint}");
+        sb.AppendLine($"- Инструкции: {s.CpuInstructionSets}");
+        sb.AppendLine();
+
+        sb.AppendLine("### Motherboard / BIOS");
+        sb.AppendLine();
+        sb.AppendLine($"- {s.MotherboardManufacturer} {s.MotherboardModel}");
+        sb.AppendLine($"- BIOS: {s.BiosVersion} ({s.BiosDate})");
+        sb.AppendLine();
+
+        sb.AppendLine("### GPU");
+        sb.AppendLine();
+        if (s.Gpus.Count == 0) sb.AppendLine("- (нет данных)");
+        foreach (var g in s.Gpus)
+            sb.AppendLine($"- {g.Name} | {g.Manufacturer} | driver {g.DriverVersion} | VRAM {FmtGb(g.VramBytes)} GB");
+        sb.AppendLine();
+
+        sb.AppendLine("### Диски");
+        sb.AppendLine();
+        if (s.PhysicalDisks.Count == 0) sb.AppendLine("- (нет данных)");
+        foreach (var d in s.PhysicalDisks)
+        {
+            var smart = d.SmartPredictFailure is { } b ? (b ? "FAIL" : "OK") + " " + d.SmartReason : "n/a";
+            sb.AppendLine($"- {d.Model} ({d.InterfaceType}) {FmtGb(d.SizeBytes)} GB — SMART: {smart}");
+        }
+        sb.AppendLine();
+
+        sb.AppendLine("### Логические тома");
+        sb.AppendLine();
+        if (s.LogicalDisks.Count == 0) sb.AppendLine("- (нет данных)");
+        foreach (var l in s.LogicalDisks)
+        {
+            var used = l.SizeBytes > 0 ? (1.0 - (double)l.FreeBytes / l.SizeBytes) * 100.0 : 0;
+            sb.AppendLine($"- {l.DeviceId} {l.VolumeName} ({l.FileSystem}) {FmtGb(l.SizeBytes)} GB, used {used:F1}%");
+        }
+        sb.AppendLine();
+
+        sb.AppendLine("### Сенсоры (сводно)");
+        sb.AppendLine();
+        AppendMdSensorGroup(sb, "CPU clocks", s.CpuPerCoreClocks, 12);
+        AppendMdSensorGroup(sb, "CPU voltages", s.CpuPerCoreVoltages, 12);
+        AppendMdSensorGroup(sb, "VRM / chipset", s.VrmChipsetSensors, 12);
+        AppendMdSensorGroup(sb, "Fans", s.FanSensors, 12);
+        AppendMdSensorGroup(sb, "Storage temps", s.StorageTemperatureSensors, 12);
+        return sb.ToString();
+    }
+
+    private static void AppendMdSensorGroup(StringBuilder sb, string title, IReadOnlyList<SensorReading> list, int max)
+    {
+        if (list.Count == 0) return;
+        sb.AppendLine($"#### {title}");
+        sb.AppendLine();
+        foreach (var sr in list.OrderBy(x => x.Name).Take(max))
+            sb.AppendLine($"- {sr.Name}: {sr.Value:F2} {sr.Unit}".TrimEnd());
+        if (list.Count > max)
+            sb.AppendLine($"- ... ({list.Count - max} more)");
+        sb.AppendLine();
+    }
+
     private static SnapshotComparisonReport BuildComparisonData(
         DeviceSnapshot baseline,
         DeviceSnapshot current,
@@ -445,6 +534,31 @@ public sealed class ReportService
             sb.AppendLine($"{Csv("Meta")},{Csv("UserComment")},{Csv(userComment.Trim())}");
         foreach (var line in cmp.Lines)
             sb.AppendLine($"{Csv("Diff")},{Csv("Line")},{Csv(line)}");
+        return sb.ToString();
+    }
+
+    private static string BuildComparisonMarkdown(SnapshotComparisonReport cmp, string? userComment)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("## PC HealthCheck — сравнительный отчёт");
+        sb.AppendLine();
+        sb.AppendLine($"- **Сформирован**: {cmp.GeneratedUtc.ToLocalTime():yyyy-MM-dd HH:mm:ss}");
+        sb.AppendLine($"- **{cmp.BaselineLabel}**: {cmp.BaselineUtc.ToLocalTime():yyyy-MM-dd HH:mm:ss}");
+        sb.AppendLine($"- **{cmp.CurrentLabel}**: {cmp.CurrentUtc.ToLocalTime():yyyy-MM-dd HH:mm:ss}");
+        sb.AppendLine();
+        if (!string.IsNullOrWhiteSpace(userComment))
+        {
+            sb.AppendLine("### Комментарий");
+            sb.AppendLine();
+            sb.AppendLine(userComment.Trim());
+            sb.AppendLine();
+        }
+
+        sb.AppendLine("### Изменения");
+        sb.AppendLine();
+        foreach (var line in cmp.Lines)
+            sb.AppendLine($"- {line}");
+        sb.AppendLine();
         return sb.ToString();
     }
 

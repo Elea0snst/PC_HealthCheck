@@ -75,9 +75,40 @@ public sealed class DiagnosticService
         if (snapshot.LogicalDisks.Any(d => d.SizeBytes > 0 && (1.0 - (double)d.FreeBytes / d.SizeBytes) >= 0.9))
             lines.Add("Рекомендация: освободить место на системном диске; при HDD рассмотреть переход на SSD/NVMe.");
 
+        // Bottleneck (расширение): CPU vs GPU vs RAM (эвристика по сенсорам LHM)
+        var gpuLoad = TryGetGpuCoreLoadPercent(snapshot);
+        if (snapshot.CpuLoadPercent is { } c && gpuLoad is { } g)
+        {
+            if (g >= 90 && c < 70)
+                lines.Add("Bottleneck: GPU загружена сильно, CPU относительно свободен — упор в видеокарту (ограничение по GPU).");
+            else if (c >= 90 && g < 60)
+                lines.Add("Bottleneck: CPU загружен сильно, GPU недогружена — упор в процессор/потоки (CPU bottleneck).");
+        }
+
+        if (snapshot.RamUsagePercent >= 95 && (snapshot.CpuLoadPercent ?? 0) >= 60)
+            lines.Add("Bottleneck: высокая загрузка RAM может вызывать подкачку и фризы. Рекомендация: закрыть фоновые приложения/увеличить RAM.");
+
         if (!hasAlert)
             lines.Add("По выбранным правилам критических отклонений не обнаружено.");
 
         return lines;
+    }
+
+    private static double? TryGetGpuCoreLoadPercent(DeviceSnapshot snapshot)
+    {
+        // Ищем в AllHardwareSensors: группа Gpu, Kind=Load, имя похоже на core/load.
+        var loads = snapshot.AllHardwareSensors
+            .Where(x => string.Equals(x.HardwareGroup, "Gpu", StringComparison.OrdinalIgnoreCase))
+            .Where(x => x.Kind == SensorKind.Load)
+            .Where(x => x.Value >= 0 && x.Value <= 100)
+            .Where(x =>
+                x.Name.Contains("core", StringComparison.OrdinalIgnoreCase) ||
+                x.Name.Contains("gpu", StringComparison.OrdinalIgnoreCase) ||
+                x.Name.Contains("load", StringComparison.OrdinalIgnoreCase))
+            .Select(x => x.Value)
+            .ToArray();
+
+        if (loads.Length == 0) return null;
+        return loads.Max();
     }
 }

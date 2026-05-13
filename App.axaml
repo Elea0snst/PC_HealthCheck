@@ -8,8 +8,169 @@
     <Application.DataTemplates>
         <local:ViewLocator/>
     </Application.DataTemplates>
+
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Light">
+                    <!-- Light: голубые + белые тона -->
+                    <SolidColorBrush x:Key="AppBackgroundBrush" Color="#EEF6FF"/>
+                    <SolidColorBrush x:Key="HeaderBackgroundBrush" Color="#D7ECFF"/>
+                    <SolidColorBrush x:Key="SurfaceBrush" Color="#FFFFFF"/>
+                    <SolidColorBrush x:Key="CardBrush" Color="#F6FBFF"/>
+                    <SolidColorBrush x:Key="BorderBrush" Color="#C9E0FF"/>
+                    <SolidColorBrush x:Key="DividerBrush" Color="#B9D6FF"/>
+
+                    <SolidColorBrush x:Key="TextPrimaryBrush" Color="#0D1B2A"/>
+                    <SolidColorBrush x:Key="TextSecondaryBrush" Color="#1F2D3D"/>
+                    <SolidColorBrush x:Key="TextMutedBrush" Color="#415A77"/>
+
+                    <SolidColorBrush x:Key="AccentBrush" Color="#238BFF"/>
+                    <SolidColorBrush x:Key="AccentHoverBrush" Color="#167CFF"/>
+                    <SolidColorBrush x:Key="AccentPressedBrush" Color="#0E6DEB"/>
+                    <SolidColorBrush x:Key="AccentTextBrush" Color="#FFFFFF"/>
+
+                    <SolidColorBrush x:Key="StatusOkBrush" Color="#2ECC71"/>
+                    <SolidColorBrush x:Key="StatusWarnBrush" Color="#F1C40F"/>
+                    <SolidColorBrush x:Key="StatusCriticalBrush" Color="#E74C3C"/>
+
+                    <!-- Gradients -->
+                    <LinearGradientBrush x:Key="HeaderGradientBrush" StartPoint="0,0" EndPoint="1,0">
+                        <GradientStop Color="#CFE9FF" Offset="0"/>
+                        <GradientStop Color="#EAF5FF" Offset="0.55"/>
+                        <GradientStop Color="#FFFFFF" Offset="1"/>
+                    </LinearGradientBrush>
+                </ResourceDictionary>
+
+                <ResourceDictionary x:Key="Dark">
+                    <!-- Dark: чёрные + красные тона -->
+                    <SolidColorBrush x:Key="AppBackgroundBrush" Color="#07090F"/>
+                    <SolidColorBrush x:Key="HeaderBackgroundBrush" Color="#0B0F1A"/>
+                    <SolidColorBrush x:Key="SurfaceBrush" Color="#0A0D14"/>
+                    <SolidColorBrush x:Key="CardBrush" Color="#0B101B"/>
+                    <SolidColorBrush x:Key="BorderBrush" Color="#232B3A"/>
+                    <SolidColorBrush x:Key="DividerBrush" Color="#232B3A"/>
+
+                    <SolidColorBrush x:Key="TextPrimaryBrush" Color="#E5E7EB"/>
+                    <SolidColorBrush x:Key="TextSecondaryBrush" Color="#CBD5E1"/>
+                    <SolidColorBrush x:Key="TextMutedBrush" Color="#94A3B8"/>
+
+                    <SolidColorBrush x:Key="AccentBrush" Color="#E11D48"/>
+                    <SolidColorBrush x:Key="AccentHoverBrush" Color="#F43F5E"/>
+                    <SolidColorBrush x:Key="AccentPressedBrush" Color="#BE123C"/>
+                    <SolidColorBrush x:Key="AccentTextBrush" Color="#FFFFFF"/>
+
+                    <SolidColorBrush x:Key="StatusOkBrush" Color="#2ECC71"/>
+                    <SolidColorBrush x:Key="StatusWarnBrush" Color="#F1C40F"/>
+                    <SolidColorBrush x:Key="StatusCriticalBrush" Color="#FF6B6B"/>
+
+                    <LinearGradientBrush x:Key="HeaderGradientBrush" StartPoint="0,0" EndPoint="1,0">
+                        <GradientStop Color="#07090F" Offset="0"/>
+                        <GradientStop Color="#0B0F1A" Offset="0.45"/>
+                        <GradientStop Color="#1A0A10" Offset="0.7"/>
+                        <GradientStop Color="#07090F" Offset="1"/>
+                    </LinearGradientBrush>
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+        </ResourceDictionary>
+    </Application.Resources>
   
     <Application.Styles>
         <FluentTheme />
+
+        <!-- Base text readability -->
+        <Style Selector="TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+            <Setter Property="FontSize" Value="13"/>
+        </Style>
+
+        <Style Selector="TextBlock.h1">
+            <Setter Property="FontSize" Value="24"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+        </Style>
+
+        <Style Selector="TextBlock.h2">
+            <Setter Property="FontSize" Value="18"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+        </Style>
+
+        <Style Selector="TextBlock.h3">
+            <Setter Property="FontSize" Value="15"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+        </Style>
+
+        <Style Selector="TextBlock.muted">
+            <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+        </Style>
+
+        <!-- Card look -->
+        <Style Selector="Border.card">
+            <Setter Property="Background" Value="{DynamicResource CardBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="10"/>
+            <Setter Property="Padding" Value="14"/>
+        </Style>
+
+        <Style Selector="Button">
+            <Setter Property="Padding" Value="12,8"/>
+            <Setter Property="Background" Value="{DynamicResource AccentBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource AccentTextBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="8"/>
+        </Style>
+
+        <Style Selector="Button:pointerover">
+            <Setter Property="Background" Value="{DynamicResource AccentHoverBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentHoverBrush}"/>
+        </Style>
+
+        <Style Selector="Button:pressed">
+            <Setter Property="Background" Value="{DynamicResource AccentPressedBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentPressedBrush}"/>
+        </Style>
+
+        <Style Selector="Button.secondary">
+            <Setter Property="Background" Value="{DynamicResource CardBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+        </Style>
+
+        <Style Selector="Button.secondary:pointerover">
+            <Setter Property="Background" Value="{DynamicResource SurfaceBrush}"/>
+        </Style>
+
+        <Style Selector="TextBox, ComboBox, ListBox">
+            <Setter Property="Background" Value="{DynamicResource CardBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+        </Style>
+
+        <!-- Tabs: active indicator + spacing -->
+        <Style Selector="TabControl">
+            <Setter Property="Background" Value="{DynamicResource SurfaceBrush}"/>
+        </Style>
+
+        <Style Selector="TabItem">
+            <Setter Property="Padding" Value="14,10"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+            <Setter Property="BorderThickness" Value="0,0,0,2"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+        </Style>
+
+        <Style Selector="TabItem:selected">
+            <!-- single highlight: underline only (no second accent effect) -->
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+        </Style>
+
+        <Style Selector="TabItem:pointerover">
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+        </Style>
     </Application.Styles>
 </Application>
