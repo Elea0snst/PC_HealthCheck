@@ -36,7 +36,9 @@ public sealed class MacHardwareProvider : IHardwareProvider
         _snapshot.TotalRamBytes = ParseLong(Sysctl("-n hw.memsize"));
         _snapshot.FreeRamBytes = EstimateFreeMemoryBytes();
         _snapshot.CpuLoadPercent = ReadCpuLoad();
-        _snapshot.CpuTemperatureC = ReadPowermetricsCpuTemp();
+        _snapshot.CpuTemperatureC = ReadCpuTemperatureBestEffort();
+        PopulateCpuTopologyFromSysctl();
+        PopulateGpusFromSystemProfiler();
 
         _snapshot.AllHardwareSensors.Clear();
         if (_snapshot.CpuTemperatureC is { } t)
@@ -81,7 +83,72 @@ public sealed class MacHardwareProvider : IHardwareProvider
                 AdapterType = n.NetworkInterfaceType.ToString()
             }).ToList();
 
-        return Task.FromResult(CloneSnapshot(_snapshot));
+        return Task.FromResult(DeviceSnapshotCloner.Clone(_snapshot));
+    }
+
+    private void PopulateCpuTopologyFromSysctl()
+    {
+        _snapshot.CpuCores = (int)ParseLong(Sysctl("-n hw.physicalcpu"));
+        _snapshot.CpuThreads = (int)ParseLong(Sysctl("-n hw.logicalcpu"));
+        if (_snapshot.CpuCores <= 0) _snapshot.CpuCores = Environment.ProcessorCount;
+        if (_snapshot.CpuThreads <= 0) _snapshot.CpuThreads = Environment.ProcessorCount;
+        var hz = ParseLong(Sysctl("-n hw.cpufrequency_max"));
+        if (hz > 0)
+            _snapshot.CpuMaxClockMHz = (uint)(hz / 1_000_000);
+    }
+
+    private void PopulateGpusFromSystemProfiler()
+    {
+        if (_snapshot.Gpus.Count > 0)
+            return;
+
+        var txt = TryRun("sh", "-lc \"system_profiler SPDisplaysDataType 2>/dev/null\"");
+        if (string.IsNullOrWhiteSpace(txt))
+            return;
+
+        string? current = null;
+        foreach (var raw in txt.Split('\n'))
+        {
+            var line = raw.TrimEnd();
+            if (line.Contains("Chipset Model:", StringComparison.OrdinalIgnoreCase))
+            {
+                current = line[(line.IndexOf(':') + 1)..].Trim();
+                if (!string.IsNullOrEmpty(current))
+                {
+                    _snapshot.Gpus.Add(new GpuInfo
+                    {
+                        Name = current,
+                        Manufacturer = "Apple",
+                        DriverVersion = "macOS"
+                    });
+                }
+            }
+        }
+    }
+
+    private double? ReadCpuTemperatureBestEffort()
+    {
+        var t = ReadPowermetricsCpuTemp();
+        if (t is not null)
+            return t;
+
+        var sensors = TryRun("sh", "-lc \"sensors 2>/dev/null | grep -iE 'Package id|CPU|Tctl|Tdie'\"");
+        if (string.IsNullOrWhiteSpace(sensors))
+            return null;
+
+        double? best = null;
+        foreach (var line in sensors.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var m = System.Text.RegularExpressions.Regex.Match(line, @"([-+]?\d+(\.\d+)?)");
+            if (!m.Success)
+                continue;
+            if (!double.TryParse(m.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var v))
+                continue;
+            if (v is > -20 and < 150)
+                best = best is null ? v : Math.Max(best.Value, v);
+        }
+
+        return best;
     }
 
     private double? ReadCpuLoad()
@@ -160,26 +227,6 @@ public sealed class MacHardwareProvider : IHardwareProvider
     }
 
     private static long ParseLong(string? text) => long.TryParse(text, out var v) ? v : 0;
-
-    private static DeviceSnapshot CloneSnapshot(DeviceSnapshot s) => new()
-    {
-        TimestampUtc = s.TimestampUtc,
-        CpuName = s.CpuName,
-        CpuManufacturer = s.CpuManufacturer,
-        CpuTemperatureC = s.CpuTemperatureC,
-        CpuLoadPercent = s.CpuLoadPercent,
-        TotalRamBytes = s.TotalRamBytes,
-        FreeRamBytes = s.FreeRamBytes,
-        RamType = s.RamType,
-        LogicalDisks = s.LogicalDisks.ToList(),
-        NetworkAdapters = s.NetworkAdapters.ToList(),
-        CpuSensors = s.CpuSensors.ToList(),
-        AllHardwareSensors = s.AllHardwareSensors.ToList(),
-        CpuPerCoreClocks = s.CpuPerCoreClocks.ToList(),
-        CpuPerCoreVoltages = s.CpuPerCoreVoltages.ToList(),
-        VrmChipsetSensors = s.VrmChipsetSensors.ToList(),
-        FanSensors = s.FanSensors.ToList()
-    };
 
     public void Dispose()
     {

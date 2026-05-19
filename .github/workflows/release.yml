@@ -1,11 +1,15 @@
-name: build
+name: release
 
 on:
   push:
-  pull_request:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
 
 jobs:
-  windows:
+  release:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -13,12 +17,6 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "9.0.x"
-
-      - name: Restore
-        run: dotnet restore
-
-      - name: Build
-        run: dotnet build -c Release --no-restore
 
       - name: Publish framework-dependent (win-x64)
         run: >
@@ -42,14 +40,10 @@ jobs:
           Compress-Archive -Path ./artifacts/framework/publish/* -DestinationPath ./artifacts/PC_HealthCheck_win-x64_framework.zip -Force
           Compress-Archive -Path ./artifacts/selfcontained/publish/* -DestinationPath ./artifacts/PC_HealthCheck_win-x64_selfcontained.zip -Force
 
-      - name: Upload framework-dependent zip
-        uses: actions/upload-artifact@v4
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: PC_HealthCheck_win-x64_framework
-          path: artifacts/PC_HealthCheck_win-x64_framework.zip
-
-      - name: Upload self-contained zip
-        uses: actions/upload-artifact@v4
-        with:
-          name: PC_HealthCheck_win-x64_selfcontained
-          path: artifacts/PC_HealthCheck_win-x64_selfcontained.zip
+          files: |
+            artifacts/PC_HealthCheck_win-x64_framework.zip
+            artifacts/PC_HealthCheck_win-x64_selfcontained.zip
+          generate_release_notes: true

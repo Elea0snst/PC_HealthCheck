@@ -1,0 +1,39 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="PC_HealthCheck.Views.MonitoringChartPanel"
+             x:Name="Root"
+             MinHeight="280">
+    <Grid RowDefinitions="Auto,*">
+        <TextBlock x:Name="HintText"
+                   Grid.Row="0"
+                   TextWrapping="Wrap"
+                   Classes="muted"
+                   Margin="0,0,0,6"/>
+        <TextBlock x:Name="PlaceholderText"
+                   Grid.Row="0"
+                   Text="Ожидание данных мониторинга…"
+                   Classes="muted"
+                   Margin="0,0,0,8"
+                   IsVisible="True"/>
+        <Border Grid.Row="1"
+                x:Name="ChartBorder"
+                Background="#F4F8FC"
+                BorderBrush="{DynamicResource BorderBrush}"
+                BorderThickness="1"
+                CornerRadius="6"
+                ClipToBounds="True"
+                MinHeight="260">
+            <Grid>
+                <Canvas x:Name="ChartCanvas"
+                        Background="#FFFFFF"
+                        MinHeight="260"/>
+                <ItemsControl x:Name="LegendPanel"
+                              VerticalAlignment="Top"
+                              HorizontalAlignment="Right"
+                              Margin="8"
+                              Background="#E8FFFFFF"
+                              Padding="6,4"/>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

@@ -2,7 +2,6 @@ using Avalonia;
 using Avalonia.Styling;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.Input;
-using OxyPlot;
 using PC_HealthCheck.Business;
 using PC_HealthCheck.Core;
 using PC_HealthCheck.DAL;
@@ -57,10 +56,19 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
     private double _cpuTempSessionSum;
     private int _cpuTempSessionCount;
 
-    private readonly MonitoringLiveChart _liveChart = new();
+    private readonly MonitoringSeriesBuffer _chartBuffer = new();
     private bool _chartShowCpuTemp = true;
     private bool _chartShowCpuLoad = true;
+    private bool _chartShowGpuTemp;
+    private bool _chartShowGpuLoad;
+    private bool _chartShowRamUsage = true;
+    private bool _chartShowStorageTemp;
+    private bool _chartShowCpuPower;
+    private bool _chartAutoAdapt = true;
+    private string _monitoringChartStatus = "";
     private bool _benchmarkRunning;
+    private bool _gpuStressActive;
+    private const int GpuTempCriticalC = 95;
     private DateTime _lastTempAlertUtc = DateTime.MinValue;
     private DateTime _lastRamAlertUtc = DateTime.MinValue;
     private DateTime _lastDiskAlertUtc = DateTime.MinValue;
@@ -91,39 +99,52 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
             Dispatcher.UIThread.Post(() => StressProgress = p);
         _testing.Completed += (_, r) => Dispatcher.UIThread.Post(async () =>
         {
-            StressStatus = r.Status switch
+            var baseStatus = r.Status switch
             {
                 TestStatus.Completed => "Тест завершен успешно",
                 TestStatus.Cancelled => "Тест остановлен",
                 TestStatus.Failed => $"Ошибка: {r.Error}",
                 _ => r.Status.ToString()
             };
+            if (r.TestName.Contains("GPU", StringComparison.OrdinalIgnoreCase) &&
+                !string.IsNullOrEmpty(_testing.LastGpuStressMode))
+                StressStatus = $"{baseStatus} • {_testing.LastGpuStressMode}";
+            else
+                StressStatus = baseStatus;
             IsTestRunning = false;
+            _gpuStressActive = false;
             await _db.SaveTestResultAsync(r);
         });
 
         _benchmarks.Completed += (_, r) => Dispatcher.UIThread.Post(() =>
         {
             BenchmarkResultLines.Clear();
-            BenchmarkResultLines.Add($"CPU (скаляр FP, ~2 с): {r.CpuFpMegaOpsPerSec:F1} млн оп./с");
-            BenchmarkResultLines.Add($"RAM (копирование буферов, ~1,5 с): {r.RamBandwidthGbPerSec:F2} ГБ/с");
-            if (r.ReferenceCpuMegaOps is { } rc && !string.IsNullOrEmpty(r.ReferenceMatchLabel))
+            BenchmarkResultLines.Add($"CPU single-core (~2 с): {r.CpuSingleThreadMegaOps:F1} млн оп./с");
+            BenchmarkResultLines.Add($"CPU multi-core (~2 с): {r.CpuMultiThreadMegaOps:F1} млн оп./с");
+            if (r.CpuSimdGflops > 0)
+                BenchmarkResultLines.Add($"CPU SIMD (AVX/Vector): {r.CpuSimdGflops:F2} GFLOPS");
+            BenchmarkResultLines.Add($"RAM read (многопот.): {r.RamReadBandwidthGbPerSec:F2} ГБ/с");
+            BenchmarkResultLines.Add($"RAM write (многопот.): {r.RamWriteBandwidthGbPerSec:F2} ГБ/с");
+
+            if (!string.IsNullOrEmpty(r.ReferenceMatchLabel))
             {
-                var pct = rc > 0 ? r.CpuFpMegaOpsPerSec / rc * 100.0 : 0;
-                BenchmarkResultLines.Add($"Эталон CPU «{r.ReferenceMatchLabel}»: ~{rc:F1} млн оп./с → ваш результат ≈{pct:F0}% от эталона.");
+                if (r.ReferenceCpuMegaOps is { } rc)
+                {
+                    var pct = rc > 0 ? r.CpuSingleThreadMegaOps / rc * 100.0 : 0;
+                    BenchmarkResultLines.Add($"Эталон ST «{r.ReferenceMatchLabel}»: ~{rc:F0} → {pct:F0}%");
+                }
+                if (r.ReferenceCpuMultiMegaOps is { } rm)
+                {
+                    var pct = rm > 0 ? r.CpuMultiThreadMegaOps / rm * 100.0 : 0;
+                    BenchmarkResultLines.Add($"Эталон MT «{r.ReferenceMatchLabel}»: ~{rm:F0} → {pct:F0}%");
+                }
+                if (r.ReferenceCompositeIndex is > 0 && r.CompositeIndex > 0)
+                    BenchmarkResultLines.Add($"Сводный индекс: {r.CompositeIndex:F0} (эталон 1000 для «{r.ReferenceMatchLabel}»)");
             }
             else
-                BenchmarkResultLines.Add("Эталон CPU: нет совпадения по встроенной таблице моделей.");
+                BenchmarkResultLines.Add("Эталон: модель CPU не найдена во встроенной таблице.");
 
-            if (r.ReferenceRamGbps is { } rr)
-            {
-                var p = rr > 0 ? r.RamBandwidthGbPerSec / rr * 100.0 : 0;
-                BenchmarkResultLines.Add($"Эталон пропускной способности RAM (оценка под класс CPU): ~{rr:F1} ГБ/с → ваш результат ≈{p:F0}%.");
-            }
-            else
-                BenchmarkResultLines.Add("Эталон RAM: недоступен (не сопоставлена модель CPU).");
-
-            BenchmarkResultLines.Add("Примечание: эталоны ориентировочные; для сравнения используйте ту же версию приложения и закройте фоновые нагрузки.");
+            BenchmarkResultLines.Add("Сравнение внутри приложения (аналоги Cinebench ST/MT, AIDA64 RAM). Закройте фоновые задачи.");
             IsBenchmarkRunning = false;
         });
 
@@ -250,7 +271,26 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
     public ObservableCollection<string> AiAnomaliesLines { get; }
     public ObservableCollection<string> AiRecommendationLines { get; }
 
-    public PlotModel MonitoringPlotModel => _liveChart.Model;
+    public event EventHandler? ChartRefreshRequested;
+
+    public MonitoringChartSnapshot BuildChartSnapshot()
+    {
+        var warn = _storedSettings.CpuTempWarningCelsius;
+        var crit = Math.Max(_storedSettings.CpuTempCriticalCelsius, warn);
+        var hint = BuildChartStatusHint();
+        return _chartBuffer.BuildSnapshot(warn, crit, hint);
+    }
+
+    private string BuildChartStatusHint()
+    {
+        var pts = _chartBuffer.TotalPointCount;
+        var load = _snapshot.CpuLoadPercent?.ToString("F0") ?? "—";
+        var ram = _snapshot.RamUsagePercent.ToString("F0");
+        var temp = MonitoringSensorAggregator.TryGetCpuTemperatureC(_snapshot)?.ToString("F1") ?? "—";
+        return $"точек: {pts} | CPU {load}% | RAM {ram}% | CPU {temp}°C";
+    }
+
+    private void RequestChartRefresh() => ChartRefreshRequested?.Invoke(this, EventArgs.Empty);
 
     public bool ChartShowCpuTemp
     {
@@ -258,7 +298,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
         set
         {
             if (SetProperty(ref _chartShowCpuTemp, value))
-                _liveChart.SetSeriesVisibility(_chartShowCpuTemp, _chartShowCpuLoad);
+                SyncChartVisibility();
         }
     }
 
@@ -268,8 +308,67 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
         set
         {
             if (SetProperty(ref _chartShowCpuLoad, value))
-                _liveChart.SetSeriesVisibility(_chartShowCpuTemp, _chartShowCpuLoad);
+                SyncChartVisibility();
         }
+    }
+
+    public bool ChartShowGpuTemp
+    {
+        get => _chartShowGpuTemp;
+        set
+        {
+            if (SetProperty(ref _chartShowGpuTemp, value))
+                SyncChartVisibility();
+        }
+    }
+
+    public bool ChartShowGpuLoad
+    {
+        get => _chartShowGpuLoad;
+        set
+        {
+            if (SetProperty(ref _chartShowGpuLoad, value))
+                SyncChartVisibility();
+        }
+    }
+
+    public bool ChartShowRamUsage
+    {
+        get => _chartShowRamUsage;
+        set
+        {
+            if (SetProperty(ref _chartShowRamUsage, value))
+                SyncChartVisibility();
+        }
+    }
+
+    public bool ChartShowStorageTemp
+    {
+        get => _chartShowStorageTemp;
+        set
+        {
+            if (SetProperty(ref _chartShowStorageTemp, value))
+                SyncChartVisibility();
+        }
+    }
+
+    public bool ChartShowCpuPower
+    {
+        get => _chartShowCpuPower;
+        set
+        {
+            if (SetProperty(ref _chartShowCpuPower, value))
+                SyncChartVisibility();
+        }
+    }
+
+    private void SyncChartVisibility()
+    {
+        _chartBuffer.SetVisibility(
+            _chartShowCpuTemp, _chartShowCpuLoad,
+            _chartShowGpuTemp, _chartShowGpuLoad,
+            _chartShowRamUsage, _chartShowStorageTemp, _chartShowCpuPower);
+        RequestChartRefresh();
     }
 
     public bool IsTestRunning { get; private set; }
@@ -335,7 +434,19 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
         : $"CPU °C за сессию: мин {_cpuTempSessionMin:F1}, макс {_cpuTempSessionMax:F1}, средн. {_cpuTempSessionSum / _cpuTempSessionCount:F1} ({_cpuTempSessionCount} отсчётов)";
 
     public string MonitoringNote =>
-        "График OxyPlot: температура и загрузка CPU; полосы — зоны по порогам из «Настройки». Ниже — сгруппированные списки LHM (ядра, VRM/PCH, вентиляторы, температура накопителей) и полный перечень сенсоров.";
+        "На ноутбуках график всегда строит CPU % и RAM %; температура CPU/GPU подключается, если доступна (LHM, WMI, hwmon, nvidia-smi). Вентиляторы и live-BIOS часто скрыты OEM — используйте авто-режим прокси-каналов.";
+
+    public string MonitoringChartStatus
+    {
+        get => _monitoringChartStatus;
+        private set => SetProperty(ref _monitoringChartStatus, value);
+    }
+
+    public bool ChartAutoAdapt
+    {
+        get => _chartAutoAdapt;
+        set => SetProperty(ref _chartAutoAdapt, value);
+    }
 
     private string TemperatureStatusLine(double? tempC)
     {
@@ -496,7 +607,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
         _cpuTempSessionMax = null;
         _cpuTempSessionSum = 0;
         _cpuTempSessionCount = 0;
-        _liveChart.Reset();
+        _chartBuffer.Reset();
+        RequestChartRefresh();
         OnPropertyChanged(nameof(CpuTempSessionSummary));
     }
 
@@ -556,6 +668,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
             return;
         }
         IsTestRunning = true;
+        _gpuStressActive = false;
         StressProgress = 0;
         StressStatus = "CPU тест выполняется...";
         var seconds = SelectedStressProfile.Seconds();
@@ -576,6 +689,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
             return;
         }
         IsTestRunning = true;
+        _gpuStressActive = false;
         StressProgress = 0;
         StressStatus = "RAM тест выполняется...";
         var seconds = SelectedStressProfile.Seconds();
@@ -596,13 +710,15 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
             return;
         }
         IsTestRunning = true;
+        _gpuStressActive = true;
         StressProgress = 0;
-        StressStatus = "GPU тест выполняется...";
+        StressStatus = "GPU тест выполняется (D3D11 compute или SIMD fallback)...";
         var seconds = SelectedStressProfile.Seconds();
         var started = await _testing.StartGpuTestAsync(seconds);
         if (!started)
         {
             IsTestRunning = false;
+            _gpuStressActive = false;
             StressStatus = "Не удалось запустить GPU тест";
         }
     }
@@ -616,6 +732,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
             return;
         }
         IsTestRunning = true;
+        _gpuStressActive = false;
         StressProgress = 0;
         StressStatus = "Disk тест выполняется...";
         var seconds = SelectedStressProfile.Seconds();
@@ -629,7 +746,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
 
     private async Task TakeSnapshotAsync()
     {
-        var s = await _provider.ReadSnapshotAsync();
+        var s = SnapshotEnricher.Enrich(await _provider.ReadSnapshotAsync());
         UpdateView(s);
     }
 
@@ -639,20 +756,84 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
         {
             UpdateView(s);
             if (IsTestRunning && s.CpuTemperatureC is { } t &&
-                t >= Math.Max(_storedSettings.CpuTempCriticalCelsius, _storedSettings.CpuTempWarningCelsius))
+                t >= _storedSettings.CpuTempCriticalCelsius)
             {
                 _testing.Stop();
-                StressStatus = $"Тест аварийно остановлен: CPU {t:F1}°C достиг критического порога.";
-                AddAlert("CRITICAL", $"CPU {t:F1}°C достиг критического порога, тест остановлен автоматически.");
-                RecordEvent("CRITICAL", "StressStopOverheat", $"Авто-остановка стресс-теста: CPU {t:F1}°C достиг критического порога.");
+                StressStatus = $"Тест остановлен: CPU {t:F1}°C ≥ крит. порога ({_storedSettings.CpuTempCriticalCelsius}°C).";
+                AddAlert("CRITICAL", $"CPU {t:F1}°C — авто-остановка стресс-теста.");
+                RecordEvent("CRITICAL", "StressStopOverheat", $"Авто-остановка: CPU {t:F1}°C.");
+            }
+
+            if (IsTestRunning && _gpuStressActive)
+            {
+                var gpuT = MonitoringSensorAggregator.TryGetGpuTemperatureC(s);
+                if (gpuT is >= GpuTempCriticalC)
+                {
+                    _testing.Stop();
+                    StressStatus = $"Тест остановлен: GPU {gpuT:F1}°C ≥ {GpuTempCriticalC}°C.";
+                    AddAlert("CRITICAL", $"GPU {gpuT:F1}°C — авто-остановка.");
+                }
             }
             await _db.SaveSnapshotAsync(s);
         });
     }
 
+    private void ApplyAdaptiveChartChannels(MonitoringChartCapabilities caps)
+    {
+        if (ChartAutoAdapt)
+        {
+            // На ноутбуках загрузка CPU/RAM почти всегда доступны — каналы не выключаем.
+            ChartShowCpuLoad = true;
+            ChartShowRamUsage = true;
+            ChartShowCpuTemp = caps.HasCpuTemp;
+
+            if (caps.IsLimitedMonitoring)
+            {
+                if (caps.HasGpuTemp) ChartShowGpuTemp = true;
+                if (caps.HasGpuLoad) ChartShowGpuLoad = true;
+                if (caps.HasStorageTemp) ChartShowStorageTemp = true;
+                if (caps.HasCpuPower) ChartShowCpuPower = true;
+            }
+        }
+
+        if (!ChartAutoAdapt)
+        {
+            MonitoringChartStatus = "Авто-каналы выключены — выберите серии вручную.";
+            SyncChartVisibility();
+            return;
+        }
+
+        if (caps.IsLimitedMonitoring)
+        {
+            _chartBuffer.SetTitle(caps.HasCpuTemp
+                ? "Мониторинг ноутбука/OEM (ограниченные датчики)"
+                : "Мониторинг ноутбука: загрузка и RAM (температура CPU недоступна)");
+
+            var missing = new List<string>();
+            if (!caps.HasCpuTemp) missing.Add("температура CPU");
+            if (!caps.HasFans) missing.Add("вентиляторы");
+            if (!caps.HasBiosSensors) missing.Add("BIOS/VRM live");
+
+            MonitoringChartStatus =
+                $"Ноутбук/OEM: нет {string.Join(", ", missing)}. График: CPU %, RAM %"
+                + (caps.HasCpuTemp ? ", CPU °C" : "")
+                + (caps.HasGpuTemp ? ", GPU °C" : "")
+                + (caps.HasGpuLoad ? ", GPU %" : "")
+                + (caps.HasStorageTemp ? ", накопитель °C" : "")
+                + (caps.HasCpuPower ? ", CPU Вт" : "") + ".";
+        }
+        else
+        {
+            _chartBuffer.SetTitle("Мониторинг: температура и загрузка");
+            MonitoringChartStatus = "Полный набор сенсоров. Вентиляторы — в списке ниже.";
+        }
+
+        SyncChartVisibility();
+    }
+
     private void UpdateSessionTemperatureStats(DeviceSnapshot s)
     {
-        if (s.CpuTemperatureC is not { } t) return;
+        if (MonitoringSensorAggregator.TryGetCpuTemperatureC(s) is not { } t) return;
         _cpuTempSessionMin = _cpuTempSessionMin is { } mn ? Math.Min(mn, t) : t;
         _cpuTempSessionMax = _cpuTempSessionMax is { } mx ? Math.Max(mx, t) : t;
         _cpuTempSessionSum += t;
@@ -686,6 +867,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
         if (!string.IsNullOrEmpty(s.CpuMicroarchitectureHint))
             CpuDetails.Add($"Микроархитектура: {s.CpuMicroarchitectureHint}");
         CpuDetails.Add($"Инструкции: {s.CpuInstructionSets}");
+        CpuDetails.Add($"Загрузка (текущая): {(s.CpuLoadPercent?.ToString("F0") ?? "н/д")} % — WMI/LHM/счётчик");
+        CpuDetails.Add($"Температура: {(MonitoringSensorAggregator.TryGetCpuTemperatureC(s)?.ToString("F1") ?? "н/д")} °C");
 
         RamDetails.Clear();
         RamDetails.Add($"Type: {s.RamType}");
@@ -771,12 +954,12 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
         foreach (var sr in s.AllHardwareSensors.OrderBy(x => x.HardwareGroup).ThenBy(x => x.Kind).ThenBy(x => x.Name))
             HardwareSensorDetails.Add($"[{sr.HardwareGroup}] {sr.Kind}: {sr.Name} = {sr.Value:F2} {sr.Unit}".TrimEnd());
 
-        static void FillSensorLines(ObservableCollection<string> target, IReadOnlyList<SensorReading> src)
+        static void FillSensorLines(ObservableCollection<string> target, IReadOnlyList<SensorReading> src, string emptyHint)
         {
             target.Clear();
             if (src.Count == 0)
             {
-                target.Add("(нет данных — проверьте LHM и драйверы материнской платы / накопителей)");
+                target.Add(emptyHint);
                 return;
             }
 
@@ -784,20 +967,39 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
                 target.Add($"{sr.Name} = {sr.Value:F2} {sr.Unit}".TrimEnd());
         }
 
-        FillSensorLines(CoreClockDetails, s.CpuPerCoreClocks);
-        FillSensorLines(CoreVoltageDetails, s.CpuPerCoreVoltages);
-        FillSensorLines(VrmChipsetDetails, s.VrmChipsetSensors);
-        FillSensorLines(FanSensorDetails, s.FanSensors);
-        FillSensorLines(StorageTempDetails, s.StorageTemperatureSensors);
+        FillSensorLines(CoreClockDetails, s.CpuPerCoreClocks,
+            "(на ноутбуке часто недоступно — OEM не отдаёт через LHM; смотрите график CPU % и RAM %)");
+        FillSensorLines(CoreVoltageDetails, s.CpuPerCoreVoltages,
+            "(на ноутбуке часто недоступно — используйте вкладку «Все сенсоры»)");
+        FillSensorLines(VrmChipsetDetails, s.VrmChipsetSensors,
+            "(BIOS/VRM live на ноутбуке обычно закрыт; в отчёте — только версия BIOS)");
+        FillSensorLines(FanSensorDetails, s.FanSensors,
+            "(вентиляторы ноутбука часто скрыты; ориентируйтесь на CPU %, RAM %, темп. накопителя)");
+        FillSensorLines(StorageTempDetails, s.StorageTemperatureSensors,
+            "(нет данных — проверьте драйвер NVMe/SSD и LHM)");
 
-        _liveChart.Append(
-            s.CpuTemperatureC,
+        var caps = MonitoringSensorAggregator.Analyze(s);
+        ApplyAdaptiveChartChannels(caps);
+
+        _chartBuffer.Append(
+            MonitoringSensorAggregator.TryGetCpuTemperatureC(s),
             s.CpuLoadPercent,
+            MonitoringSensorAggregator.TryGetGpuTemperatureC(s),
+            MonitoringSensorAggregator.TryGetGpuLoadPercent(s),
+            s.RamUsagePercent,
+            MonitoringSensorAggregator.TryGetMaxStorageTempC(s),
+            MonitoringSensorAggregator.TryGetCpuPowerW(s),
             ChartShowCpuTemp,
             ChartShowCpuLoad,
-            _storedSettings.CpuTempWarningCelsius,
-            Math.Max(_storedSettings.CpuTempCriticalCelsius, _storedSettings.CpuTempWarningCelsius),
+            ChartShowGpuTemp,
+            ChartShowGpuLoad,
+            ChartShowRamUsage,
+            ChartShowStorageTemp,
+            ChartShowCpuPower,
             MaxLiveChartPoints);
+
+        MonitoringChartStatus = BuildChartStatusHint();
+        RequestChartRefresh();
 
         OnPropertyChanged(nameof(CpuHeader));
         OnPropertyChanged(nameof(CpuTempText));
@@ -915,7 +1117,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
         if (IsBenchmarkRunning || IsTestRunning) return;
         IsBenchmarkRunning = true;
         BenchmarkResultLines.Clear();
-        BenchmarkResultLines.Add("Выполняется быстрый бенчмарк (~4 с)...");
+        BenchmarkResultLines.Add("Выполняется бенчмарк (~8 с): ST/MT CPU, SIMD, RAM read/write...");
         try
         {
             var ok = await _benchmarks.RunQuickSuiteAsync(_snapshot);

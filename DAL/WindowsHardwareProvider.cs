@@ -1373,17 +1373,13 @@ public sealed class WindowsHardwareProvider : IHardwareProvider
 
 
         if (cpuTemp is null)
-
             cpuTemp = TryReadThermalZoneCelsius();
 
-
-
         _snapshot.CpuTemperatureC = cpuTemp;
-
         _snapshot.CpuLoadPercent = cpuLoad;
 
         HardwareSensorCategorizer.Apply(_snapshot);
-
+        WindowsMonitoringFallback.Apply(_snapshot);
     }
 
     private void ReadHardwareRecursive(IHardware hw, ref double? cpuTemp, ref double? cpuLoad)
@@ -1419,13 +1415,15 @@ public sealed class WindowsHardwareProvider : IHardwareProvider
                 TimestampLocal = DateTime.Now
             });
 
-            if (hw.HardwareType == HardwareType.Cpu &&
-                (cpuTemp is null
-                 || s.Name.Contains("Package", StringComparison.OrdinalIgnoreCase)
-                 || s.Name.Contains("Tctl", StringComparison.OrdinalIgnoreCase)
-                 || s.Name.Contains("Tdie", StringComparison.OrdinalIgnoreCase)))
+            if (hw.HardwareType == HardwareType.Cpu)
             {
-                cpuTemp = v;
+                var prefer = s.Name.Contains("Package", StringComparison.OrdinalIgnoreCase)
+                             || s.Name.Contains("Tctl", StringComparison.OrdinalIgnoreCase)
+                             || s.Name.Contains("Tdie", StringComparison.OrdinalIgnoreCase);
+                if (cpuTemp is null || prefer)
+                    cpuTemp = v;
+                else
+                    cpuTemp = Math.Max(cpuTemp.Value, v);
             }
         }
         else if (s.SensorType == LibreHardwareMonitor.Hardware.SensorType.Load)
@@ -1443,13 +1441,8 @@ public sealed class WindowsHardwareProvider : IHardwareProvider
                 TimestampLocal = DateTime.Now
             });
 
-            if (hw.HardwareType == HardwareType.Cpu &&
-                (cpuLoad is null
-                 || s.Name.Contains("Total", StringComparison.OrdinalIgnoreCase)
-                 || s.Name.Contains("CPU Total", StringComparison.OrdinalIgnoreCase)))
-            {
-                cpuLoad = v;
-            }
+            if (hw.HardwareType == HardwareType.Cpu)
+                cpuLoad = cpuLoad is null ? v : Math.Max(cpuLoad.Value, v);
         }
     }
 

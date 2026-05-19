@@ -3,14 +3,14 @@
 ## 1) Что уже работает кроссплатформенно
 
 - UI на Avalonia.
-- Базовый провайдер `UnixHardwareProvider` для Linux/macOS.
+- Провайдеры `LinuxHardwareProvider` и `MacHardwareProvider` (для прочих Unix — `UnixHardwareProvider`).
 - Общая бизнес-логика: отчеты, диагностика, бенчмарк, БД, настройки.
 - Мониторинг в ограниченном режиме:
   - логические диски;
   - сетевые интерфейсы;
   - системная информация по ОС/архитектуре.
 
-Ограничения текущей реализации: нет WMI/LibreHardwareMonitor датчиков (температуры, вентиляторы, VRM, SMART-детали) на Linux/macOS.
+Ограничения: нет WMI/LibreHardwareMonitor; на Linux частично `lm-sensors` и `nvidia-smi`; на macOS — ограниченные датчики. Релизные **exe** для пользователей собираются только под **win-x64** (см. README).
 
 ## 2) Установка SDK
 

@@ -58,29 +58,25 @@ public sealed class TestingService : IDisposable
 
     public Task<bool> StartGpuTestAsync(int seconds)
     {
-        return StartAsync("GPU Stress (compute)", seconds, async (end, token) =>
+        return StartAsync("GPU Stress", seconds, async (end, token) =>
         {
-            // Cross-platform compute-heavy fallback without native GPU APIs.
-            var workers = Math.Max(1, Environment.ProcessorCount / 2);
-            var tasks = new List<Task>(workers);
-            for (int i = 0; i < workers; i++)
-            {
-                tasks.Add(Task.Run(() =>
-                {
-                    var data = new float[1 << 20];
-                    for (int k = 0; k < data.Length; k++) data[k] = k * 0.0001f;
-                    while (!token.IsCancellationRequested && DateTime.UtcNow < end)
-                    {
-                        for (int j = 0; j < data.Length; j++)
-                            data[j] = MathF.Sin(data[j]) * MathF.Cos(data[j]) + MathF.Sqrt(MathF.Abs(data[j]) + 1f);
-                    }
-                }, token));
-            }
-            await TrackProgressAsync(seconds, end, token, 250);
+            var duration = end - DateTime.UtcNow;
+            if (duration < TimeSpan.FromSeconds(1))
+                duration = TimeSpan.FromSeconds(1);
+
+            var gpuTask = GpuStressWorkload.RunAsync(duration, token);
+            while (!token.IsCancellationRequested && DateTime.UtcNow < end)
+                await TrackProgressAsync(seconds, end, token, 250);
+
+            var (mode, _) = await gpuTask;
             token.ThrowIfCancellationRequested();
-            await Task.WhenAll(tasks);
+            _lastGpuStressMode = mode;
         });
     }
+
+    private string _lastGpuStressMode = "";
+
+    public string LastGpuStressMode => _lastGpuStressMode;
 
     public Task<bool> StartDiskTestAsync(int seconds)
     {

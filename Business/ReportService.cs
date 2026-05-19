@@ -1,6 +1,7 @@
 using PC_HealthCheck.Core;
 using System.Linq;
 using System.Net;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 
@@ -20,6 +21,16 @@ public sealed class ReportService
 {
     private static readonly JsonSerializerOptions JsonOpts = new() { WriteIndented = true };
 
+    private static void AppendHtmlSensorGroup(StringBuilder sb, string title, IReadOnlyList<SensorReading> list)
+    {
+        if (list.Count == 0) return;
+        sb.Append("<h3>").Append(WebUtility.HtmlEncode(title)).Append("</h3><table><tr><th>Имя</th><th>Значение</th></tr>");
+        foreach (var sr in list.OrderBy(x => x.Name))
+            sb.Append("<tr><td>").Append(WebUtility.HtmlEncode(sr.Name)).Append("</td><td>")
+                .Append(WebUtility.HtmlEncode($"{sr.Value:F2} {sr.Unit}".Trim())).Append("</td></tr>");
+        sb.Append("</table>");
+    }
+
     private static void AppendSensorGroup(StringBuilder sb, string title, IReadOnlyList<SensorReading> list)
     {
         if (list.Count == 0)
@@ -32,6 +43,7 @@ public sealed class ReportService
 
     public string Build(DeviceSnapshot s, ReportFormat format, string? userComment = null)
     {
+        s = SnapshotEnricher.Enrich(s);
         return format switch
         {
             ReportFormat.Txt => BuildTxt(s, userComment),
@@ -51,6 +63,8 @@ public sealed class ReportService
         string? currentLabel = null,
         string? userComment = null)
     {
+        baseline = SnapshotEnricher.Enrich(baseline);
+        current = SnapshotEnricher.Enrich(current);
         var cmp = BuildComparisonData(baseline, current, baselineLabel, currentLabel);
         return format switch
         {
@@ -90,6 +104,16 @@ public sealed class ReportService
             sb.AppendLine("=== Комментарий пользователя (ТЗ 2.4.1) ===");
             sb.AppendLine(userComment.Trim());
         }
+
+        sb.AppendLine();
+        sb.AppendLine("=== Среда / ОС ===");
+        foreach (var line in ReportSnapshotExtras.EnvironmentLines())
+            sb.AppendLine(line);
+
+        sb.AppendLine();
+        sb.AppendLine("=== Мониторинг (сводка) ===");
+        foreach (var line in ReportSnapshotExtras.MonitoringSummaryLines(s))
+            sb.AppendLine(line);
 
         sb.AppendLine();
         sb.AppendLine("=== CPU ===");
@@ -198,6 +222,16 @@ public sealed class ReportService
         AppendSensorGroup(sb, "Вентиляторы (LHM)", s.FanSensors);
         AppendSensorGroup(sb, "Температура накопителей (LHM)", s.StorageTemperatureSensors);
 
+        if (s.AllHardwareSensors.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine($"=== Все сенсоры ({s.AllHardwareSensors.Count}) ===");
+            foreach (var sr in s.AllHardwareSensors.OrderBy(x => x.HardwareGroup).ThenBy(x => x.Kind).ThenBy(x => x.Name).Take(400))
+                sb.AppendLine($"[{sr.HardwareGroup}] {sr.Kind}: {sr.Name} = {sr.Value:F2} {sr.Unit}".TrimEnd());
+            if (s.AllHardwareSensors.Count > 400)
+                sb.AppendLine($"... ещё {s.AllHardwareSensors.Count - 400} показаний");
+        }
+
         return sb.ToString();
     }
 
@@ -216,6 +250,18 @@ public sealed class ReportService
         }
 
         void h3(string t) => sb.Append("<h3>").Append(WebUtility.HtmlEncode(t)).Append("</h3>");
+
+        h3("Среда / ОС");
+        sb.Append("<ul>");
+        foreach (var line in ReportSnapshotExtras.EnvironmentLines())
+            sb.Append("<li>").Append(WebUtility.HtmlEncode(line)).Append("</li>");
+        sb.Append("</ul>");
+
+        h3("Мониторинг (сводка)");
+        sb.Append("<ul>");
+        foreach (var line in ReportSnapshotExtras.MonitoringSummaryLines(s))
+            sb.Append("<li>").Append(WebUtility.HtmlEncode(line)).Append("</li>");
+        sb.Append("</ul>");
 
         h3("CPU");
         sb.Append("<p>").Append(WebUtility.HtmlEncode(s.CpuName)).Append("</p><ul>");
@@ -316,6 +362,24 @@ public sealed class ReportService
                 .Append(FmtGb(l.FreeBytes)).Append("</td></tr>");
         sb.Append("</table>");
 
+        AppendHtmlSensorGroup(sb, "Частоты ядер CPU", s.CpuPerCoreClocks);
+        AppendHtmlSensorGroup(sb, "Напряжения CPU", s.CpuPerCoreVoltages);
+        AppendHtmlSensorGroup(sb, "VRM / PCH", s.VrmChipsetSensors);
+        AppendHtmlSensorGroup(sb, "Вентиляторы", s.FanSensors);
+        AppendHtmlSensorGroup(sb, "Температура накопителей", s.StorageTemperatureSensors);
+
+        if (s.AllHardwareSensors.Count > 0)
+        {
+            h3($"Все сенсоры ({s.AllHardwareSensors.Count})");
+            sb.Append("<table><tr><th>Группа</th><th>Тип</th><th>Имя</th><th>Значение</th></tr>");
+            foreach (var sr in s.AllHardwareSensors.OrderBy(x => x.HardwareGroup).ThenBy(x => x.Kind).ThenBy(x => x.Name).Take(300))
+                sb.Append("<tr><td>").Append(WebUtility.HtmlEncode(sr.HardwareGroup)).Append("</td><td>")
+                    .Append(WebUtility.HtmlEncode(sr.Kind.ToString())).Append("</td><td>")
+                    .Append(WebUtility.HtmlEncode(sr.Name)).Append("</td><td>")
+                    .Append(WebUtility.HtmlEncode($"{sr.Value:F2} {sr.Unit}".Trim())).Append("</td></tr>");
+            sb.Append("</table>");
+        }
+
         sb.Append("</body></html>");
         return sb.ToString();
     }
@@ -330,8 +394,11 @@ public sealed class ReportService
         }
 
         row("Meta", "ExportedUtc", DateTime.UtcNow.ToString("O"));
+        row("Meta", "Platform", RuntimeInformation.OSDescription);
         if (!string.IsNullOrWhiteSpace(userComment))
             row("Meta", "UserComment", userComment.Trim());
+        foreach (var line in ReportSnapshotExtras.MonitoringSummaryLines(s))
+            row("Monitoring", "Summary", line);
         row("CPU", "Name", s.CpuName);
         row("CPU", "Manufacturer", s.CpuManufacturer);
         row("CPU", "Cores", s.CpuCores.ToString());
@@ -341,11 +408,27 @@ public sealed class ReportService
         row("RAM", "Type", s.RamType);
         row("RAM", "TotalGb", FmtGb(s.TotalRamBytes));
         row("RAM", "UsagePercent", s.RamUsagePercent.ToString("F1"));
+        row("RAM", "FreeGb", FmtGb(s.FreeRamBytes));
+        row("Board", "Manufacturer", s.MotherboardManufacturer);
+        row("Board", "Model", s.MotherboardModel);
+        row("BIOS", "Version", s.BiosVersion);
+        row("BIOS", "Date", s.BiosDate);
+        foreach (var g in s.Gpus)
+            row("GPU", g.Name, $"{g.Manufacturer}; driver={g.DriverVersion}; VRAM={FmtGb(g.VramBytes)} GB");
+        foreach (var n in s.NetworkAdapters)
+            row("Network", n.Name, $"{n.MacAddress}; {n.SpeedBitsPerSec} bps; {n.AdapterType}");
         foreach (var d in s.PhysicalDisks)
         {
             row("Disk", "Model", d.Model);
             row("Disk", "SmartPredictFailure", d.SmartPredictFailure?.ToString());
         }
+        foreach (var l in s.LogicalDisks)
+        {
+            var used = l.SizeBytes > 0 ? (1.0 - (double)l.FreeBytes / l.SizeBytes) * 100.0 : 0;
+            row("LogicalDisk", l.DeviceId, $"{l.FileSystem}; {FmtGb(l.SizeBytes)} GB; used {used:F1}%");
+        }
+        foreach (var sr in s.AllHardwareSensors.Take(500))
+            row("Sensor", $"{sr.HardwareGroup}/{sr.Kind}", $"{sr.Name}={sr.Value:F2} {sr.Unit}".Trim());
 
         return sb.ToString();
     }
@@ -356,6 +439,17 @@ public sealed class ReportService
         sb.AppendLine("## PC HealthCheck — отчёт");
         sb.AppendLine();
         sb.AppendLine($"- **Дата (локально)**: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+        sb.AppendLine();
+        sb.AppendLine("### Среда / ОС");
+        sb.AppendLine();
+        foreach (var line in ReportSnapshotExtras.EnvironmentLines())
+            sb.AppendLine($"- {line}");
+        sb.AppendLine();
+        sb.AppendLine("### Мониторинг (сводка)");
+        sb.AppendLine();
+        foreach (var line in ReportSnapshotExtras.MonitoringSummaryLines(s))
+            sb.AppendLine($"- {line}");
+        sb.AppendLine();
         sb.AppendLine($"- **CPU**: {s.CpuName}");
         sb.AppendLine($"- **CPU temp/load**: {(s.CpuTemperatureC?.ToString("F1") ?? "N/A")} °C / {(s.CpuLoadPercent?.ToString("F0") ?? "N/A")} %");
         sb.AppendLine($"- **RAM**: {s.RamType}, {FmtGb(s.TotalRamBytes)} GB total, {FmtGb(s.FreeRamBytes)} GB free, {s.RamUsagePercent:F1}% used");
@@ -420,6 +514,35 @@ public sealed class ReportService
         AppendMdSensorGroup(sb, "VRM / chipset", s.VrmChipsetSensors, 12);
         AppendMdSensorGroup(sb, "Fans", s.FanSensors, 12);
         AppendMdSensorGroup(sb, "Storage temps", s.StorageTemperatureSensors, 12);
+
+        sb.AppendLine("### Сеть");
+        sb.AppendLine();
+        if (s.NetworkAdapters.Count == 0) sb.AppendLine("- (нет данных)");
+        foreach (var n in s.NetworkAdapters)
+        {
+            var mb = n.SpeedBitsPerSec > 0 ? $"{n.SpeedBitsPerSec / 1_000_000} Mbps" : "?";
+            sb.AppendLine($"- {n.Name} | MAC {n.MacAddress} | {mb} | {n.AdapterType}");
+        }
+        sb.AppendLine();
+
+        sb.AppendLine("### PCI");
+        sb.AppendLine();
+        if (s.PciDevices.Count == 0) sb.AppendLine("- (нет данных)");
+        foreach (var p in s.PciDevices.Take(40))
+            sb.AppendLine($"- {p.Name} | {p.PnpClass} | {p.PnpDeviceId}");
+        sb.AppendLine();
+
+        if (s.AllHardwareSensors.Count > 0)
+        {
+            sb.AppendLine($"### Все сенсоры ({s.AllHardwareSensors.Count})");
+            sb.AppendLine();
+            foreach (var sr in s.AllHardwareSensors.OrderBy(x => x.HardwareGroup).ThenBy(x => x.Name).Take(80))
+                sb.AppendLine($"- [{sr.HardwareGroup}] {sr.Kind} {sr.Name}: {sr.Value:F2} {sr.Unit}".TrimEnd());
+            if (s.AllHardwareSensors.Count > 80)
+                sb.AppendLine($"- ... ещё {s.AllHardwareSensors.Count - 80}");
+            sb.AppendLine();
+        }
+
         return sb.ToString();
     }
 
@@ -473,6 +596,13 @@ public sealed class ReportService
         lines.Add($"Сетевые адаптеры: {baseline.NetworkAdapters.Count} -> {current.NetworkAdapters.Count} ({DeltaInt(current.NetworkAdapters.Count - baseline.NetworkAdapters.Count)})");
         lines.Add($"GPU обнаружено: {baseline.Gpus.Count} -> {current.Gpus.Count} ({DeltaInt(current.Gpus.Count - baseline.Gpus.Count)})");
 
+        var bGpuT = MonitoringSensorAggregator.TryGetGpuTemperatureC(baseline);
+        var cGpuT = MonitoringSensorAggregator.TryGetGpuTemperatureC(current);
+        if (bGpuT is { } bgt && cGpuT is { } cgt)
+            lines.Add($"GPU температура: {bgt:F1}°C -> {cgt:F1}°C ({Delta(cgt - bgt)}°C)");
+
+        lines.Add($"Сенсоров (всего): {baseline.AllHardwareSensors.Count} -> {current.AllHardwareSensors.Count} ({DeltaInt(current.AllHardwareSensors.Count - baseline.AllHardwareSensors.Count)})");
+
         return new SnapshotComparisonReport
         {
             BaselineUtc = baseline.TimestampUtc,
@@ -497,6 +627,10 @@ public sealed class ReportService
             sb.AppendLine(userComment.Trim());
         }
 
+        sb.AppendLine();
+        sb.AppendLine("=== Среда ===");
+        foreach (var line in ReportSnapshotExtras.EnvironmentLines())
+            sb.AppendLine(line);
         sb.AppendLine();
         sb.AppendLine("=== Изменения ===");
         foreach (var line in cmp.Lines)
@@ -530,6 +664,7 @@ public sealed class ReportService
         sb.AppendLine($"{Csv("Meta")},{Csv("GeneratedUtc")},{Csv(cmp.GeneratedUtc.ToString("O"))}");
         sb.AppendLine($"{Csv("Meta")},{Csv("BaselineUtc")},{Csv(cmp.BaselineUtc.ToString("O"))}");
         sb.AppendLine($"{Csv("Meta")},{Csv("CurrentUtc")},{Csv(cmp.CurrentUtc.ToString("O"))}");
+        sb.AppendLine($"{Csv("Meta")},{Csv("Platform")},{Csv(RuntimeInformation.OSDescription)}");
         if (!string.IsNullOrWhiteSpace(userComment))
             sb.AppendLine($"{Csv("Meta")},{Csv("UserComment")},{Csv(userComment.Trim())}");
         foreach (var line in cmp.Lines)
@@ -545,6 +680,7 @@ public sealed class ReportService
         sb.AppendLine($"- **Сформирован**: {cmp.GeneratedUtc.ToLocalTime():yyyy-MM-dd HH:mm:ss}");
         sb.AppendLine($"- **{cmp.BaselineLabel}**: {cmp.BaselineUtc.ToLocalTime():yyyy-MM-dd HH:mm:ss}");
         sb.AppendLine($"- **{cmp.CurrentLabel}**: {cmp.CurrentUtc.ToLocalTime():yyyy-MM-dd HH:mm:ss}");
+        sb.AppendLine($"- **Платформа**: {RuntimeInformation.OSDescription}");
         sb.AppendLine();
         if (!string.IsNullOrWhiteSpace(userComment))
         {

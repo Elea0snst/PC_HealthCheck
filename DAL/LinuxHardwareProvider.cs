@@ -48,7 +48,16 @@ public sealed class LinuxHardwareProvider : IHardwareProvider
         _snapshot.StorageTemperatureSensors.Clear();
 
         PopulateFromLmSensors();
+        PopulateFromHwmon();
+        PopulateCpuTopologyFromProc();
+        PopulateGpusBestEffort();
+        TryPopulateNvidiaSensors();
         HardwareSensorCategorizer.Apply(_snapshot);
+
+        if (_snapshot.CpuSensors.Count == 0)
+            _snapshot.CpuSensors = _snapshot.AllHardwareSensors
+                .Where(x => string.Equals(x.HardwareGroup, "Cpu", StringComparison.OrdinalIgnoreCase))
+                .ToList();
 
         _snapshot.LogicalDisks = DriveInfo.GetDrives()
             .Where(d => d.IsReady)
@@ -74,7 +83,153 @@ public sealed class LinuxHardwareProvider : IHardwareProvider
                 AdapterType = n.NetworkInterfaceType.ToString()
             }).ToList();
 
-        return Task.FromResult(CloneSnapshot(_snapshot));
+        return Task.FromResult(DeviceSnapshotCloner.Clone(_snapshot));
+    }
+
+    private void PopulateCpuTopologyFromProc()
+    {
+        try
+        {
+            var lines = File.ReadAllLines("/proc/cpuinfo");
+            _snapshot.CpuCores = lines.Count(l => l.StartsWith("processor", StringComparison.OrdinalIgnoreCase));
+            if (_snapshot.CpuCores <= 0) _snapshot.CpuCores = Environment.ProcessorCount;
+            _snapshot.CpuThreads = _snapshot.CpuCores;
+        }
+        catch
+        {
+            _snapshot.CpuCores = Environment.ProcessorCount;
+            _snapshot.CpuThreads = Environment.ProcessorCount;
+        }
+    }
+
+    private void PopulateFromHwmon()
+    {
+        try
+        {
+            foreach (var hwmonDir in Directory.EnumerateDirectories("/sys/class/hwmon"))
+            {
+                var namePath = Path.Combine(hwmonDir, "name");
+                if (!File.Exists(namePath))
+                    continue;
+                var chip = File.ReadAllText(namePath).Trim();
+                var group = InferGroup(chip);
+
+                foreach (var input in Directory.EnumerateFiles(hwmonDir, "*_input"))
+                {
+                    var labelFile = input.Replace("_input", "_label", StringComparison.Ordinal);
+                    var key = File.Exists(labelFile) ? File.ReadAllText(labelFile).Trim() : Path.GetFileName(input);
+                    if (!double.TryParse(File.ReadAllText(input).Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var raw))
+                        continue;
+
+                    var (kind, unit, value) = NormalizeHwmonReading(key, raw);
+                    _snapshot.AllHardwareSensors.Add(new SensorReading
+                    {
+                        Name = $"{chip} / {key}",
+                        HardwareGroup = group,
+                        Kind = kind,
+                        Unit = unit,
+                        Value = value,
+                        TimestampLocal = DateTime.Now
+                    });
+                }
+            }
+        }
+        catch
+        {
+            // best effort
+        }
+    }
+
+    private static (SensorKind Kind, string Unit, double Value) NormalizeHwmonReading(string key, double raw)
+    {
+        var k = key.ToLowerInvariant();
+        if (k.Contains("temp"))
+        {
+            var c = raw > 500 ? raw / 1000.0 : raw;
+            return (SensorKind.Temperature, "°C", c);
+        }
+        if (k.Contains("fan"))
+            return (SensorKind.Fan, "RPM", raw);
+        if (k.Contains("in") || k.Contains("volt"))
+            return (SensorKind.Voltage, "V", raw > 20 ? raw / 1000.0 : raw);
+        if (k.Contains("power"))
+            return (SensorKind.Power, "W", raw > 500 ? raw / 1_000_000.0 : raw);
+        return (SensorKind.Other, "", raw);
+    }
+
+    private void PopulateGpusBestEffort()
+    {
+        if (_snapshot.Gpus.Count > 0)
+            return;
+
+        var lspci = TryRun("sh", "-lc \"lspci 2>/dev/null | grep -iE 'vga|3d|display'\"");
+        if (string.IsNullOrWhiteSpace(lspci))
+            return;
+
+        foreach (var line in lspci.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var name = line;
+            var colon = line.IndexOf(':');
+            if (colon >= 0 && colon + 1 < line.Length)
+                name = line[(colon + 1)..].Trim();
+            _snapshot.Gpus.Add(new GpuInfo
+            {
+                Name = name,
+                Manufacturer = "Linux",
+                DriverVersion = "lspci"
+            });
+        }
+    }
+
+    private void TryPopulateNvidiaSensors()
+    {
+        var outText = TryRun("nvidia-smi", "--query-gpu=name,temperature.gpu,utilization.gpu,memory.total --format=csv,noheader,nounits");
+        if (string.IsNullOrWhiteSpace(outText))
+            return;
+
+        foreach (var line in outText.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var parts = line.Split(',', StringSplitOptions.TrimEntries);
+            if (parts.Length < 2)
+                continue;
+
+            var gpuName = parts[0];
+            if (_snapshot.Gpus.All(g => !g.Name.Contains(gpuName, StringComparison.OrdinalIgnoreCase)))
+            {
+                _snapshot.Gpus.Add(new GpuInfo
+                {
+                    Name = gpuName,
+                    Manufacturer = "NVIDIA",
+                    DriverVersion = "nvidia-smi"
+                });
+            }
+
+            if (double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var temp))
+            {
+                _snapshot.AllHardwareSensors.Add(new SensorReading
+                {
+                    Name = $"{gpuName} / GPU Temperature",
+                    HardwareGroup = "Gpu",
+                    Kind = SensorKind.Temperature,
+                    Unit = "°C",
+                    Value = temp,
+                    TimestampLocal = DateTime.Now
+                });
+            }
+
+            if (parts.Length >= 3 && double.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var load))
+            {
+                _snapshot.AllHardwareSensors.Add(new SensorReading
+                {
+                    Name = $"{gpuName} / GPU Core Load",
+                    HardwareGroup = "Gpu",
+                    Kind = SensorKind.Load,
+                    Unit = "%",
+                    Value = load,
+                    TimestampLocal = DateTime.Now
+                });
+            }
+        }
     }
 
     private void PopulateFromLmSensors()
@@ -226,19 +381,51 @@ public sealed class LinuxHardwareProvider : IHardwareProvider
     {
         try
         {
-            var files = Directory.EnumerateFiles("/sys/class/thermal", "temp", SearchOption.AllDirectories).Take(32);
-            foreach (var f in files)
+            double? best = null;
+            foreach (var hwmonDir in Directory.EnumerateDirectories("/sys/class/hwmon"))
             {
-                var txt = File.ReadAllText(f).Trim();
-                if (!double.TryParse(txt, NumberStyles.Float, CultureInfo.InvariantCulture, out var raw))
+                var namePath = Path.Combine(hwmonDir, "name");
+                if (!File.Exists(namePath))
+                    continue;
+                var chip = File.ReadAllText(namePath).Trim();
+                if (!chip.Contains("coretemp", StringComparison.OrdinalIgnoreCase) &&
+                    !chip.Contains("k10temp", StringComparison.OrdinalIgnoreCase) &&
+                    !chip.Contains("zenpower", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                foreach (var input in Directory.EnumerateFiles(hwmonDir, "temp*_input"))
+                {
+                    if (!double.TryParse(File.ReadAllText(input).Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var raw))
+                        continue;
+                    var c = raw > 500 ? raw / 1000.0 : raw;
+                    if (c is > -20 and < 150)
+                        best = best is null ? c : Math.Max(best.Value, c);
+                }
+            }
+
+            if (best is not null)
+                return best;
+
+            foreach (var f in Directory.EnumerateFiles("/sys/class/thermal", "temp", SearchOption.AllDirectories).Take(48))
+            {
+                var typePath = Path.Combine(Path.GetDirectoryName(f)!, "type");
+                var type = File.Exists(typePath) ? File.ReadAllText(typePath).Trim() : "";
+                if (!type.Contains("cpu", StringComparison.OrdinalIgnoreCase) &&
+                    !type.Contains("x86", StringComparison.OrdinalIgnoreCase) &&
+                    !type.Contains("proc", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                if (!double.TryParse(File.ReadAllText(f).Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var raw))
                     continue;
                 var c = raw > 500 ? raw / 1000.0 : raw;
-                if (c > -20 && c < 150) return c;
+                if (c is > -20 and < 150)
+                    return c;
             }
         }
         catch
         {
         }
+
         return null;
     }
 
@@ -264,28 +451,6 @@ public sealed class LinuxHardwareProvider : IHardwareProvider
             return null;
         }
     }
-
-    private static DeviceSnapshot CloneSnapshot(DeviceSnapshot s) => new()
-    {
-        TimestampUtc = s.TimestampUtc,
-        CpuName = s.CpuName,
-        CpuManufacturer = s.CpuManufacturer,
-        CpuTemperatureC = s.CpuTemperatureC,
-        CpuLoadPercent = s.CpuLoadPercent,
-        TotalRamBytes = s.TotalRamBytes,
-        FreeRamBytes = s.FreeRamBytes,
-        RamType = s.RamType,
-        BiosVersion = s.BiosVersion,
-        CpuSensors = s.CpuSensors.ToList(),
-        AllHardwareSensors = s.AllHardwareSensors.ToList(),
-        CpuPerCoreClocks = s.CpuPerCoreClocks.ToList(),
-        CpuPerCoreVoltages = s.CpuPerCoreVoltages.ToList(),
-        VrmChipsetSensors = s.VrmChipsetSensors.ToList(),
-        FanSensors = s.FanSensors.ToList(),
-        StorageTemperatureSensors = s.StorageTemperatureSensors.ToList(),
-        LogicalDisks = s.LogicalDisks.ToList(),
-        NetworkAdapters = s.NetworkAdapters.ToList()
-    };
 
     public void Dispose()
     {

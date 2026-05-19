@@ -1,19 +1,61 @@
 # PC HealthCheck
 
-Desktop-приложение для диагностики и мониторинга компонентов ПК (Avalonia + .NET).
+Настольное приложение для диагностики, мониторинга и нагрузочного тестирования компонентов ПК (Avalonia UI + .NET 9).
 
-## Статус реализации
+## Скачать (Windows 10/11 x64)
 
-- Windows: расширенный режим (WMI + LibreHardwareMonitor + SMART parsing).
-- Linux/macOS: ограниченный базовый режим через `UnixHardwareProvider`.
+Готовые сборки публикуются в разделе **Releases** вашего репозитория на GitHub (после push тега `v1.0.0` workflow `release.yml` создаст Release автоматически).
 
-## Матрица платформ (честно)
+| Архив | Нужен .NET 9 Desktop Runtime? | Когда выбирать |
+|-------|-------------------------------|----------------|
+| **PC_HealthCheck_win-x64_framework.zip** | **Да** | Меньший размер exe (~37 МБ), Runtime уже установлен или можно установить отдельно |
+| **PC_HealthCheck_win-x64_selfcontained.zip** | **Нет** | «Скачал и запустил» без установки Runtime (~80–120+ МБ) |
 
-- **Windows 10/11 (x64)**: полный режим (WMI + LibreHardwareMonitor), SMART через WMI.
-- **Linux (x64)**: базовый режим + частично `lm-sensors` (если установлен пакет `sensors`). Для NVIDIA температуры/загрузки через `nvidia-smi` — планируется (Roadmap).
-- **macOS**: ограниченный режим (по умолчанию базовые метрики). Глубокие датчики ограничены политиками/драйверами.
+### Установка .NET 9 Desktop Runtime (только для framework-варианта)
 
-## Быстрый старт
+1. Скачайте [**.NET Desktop Runtime 9.x**](https://dotnet.microsoft.com/download/dotnet/9.0) для Windows x64.
+2. Установите и перезапустите `PC_HealthCheck.exe`.
+
+### Первый запуск
+
+1. Распакуйте zip в любую папку (например `C:\Tools\PC_HealthCheck\`).
+2. Запустите `PC_HealthCheck.exe`.
+3. При предупреждении SmartScreen: **Подробнее** → **Выполнить в любом случае** (для неподписанной учебной сборки это нормально).
+4. При отсутствии датчиков температуры на ноутбуке запустите от имени администратора (по необходимости).
+
+Подробная инструкция: [docs/USER_GUIDE.md](docs/USER_GUIDE.md).
+
+## Документация
+
+| Файл | Назначение |
+|------|------------|
+| [docs/USER_GUIDE.md](docs/USER_GUIDE.md) | Руководство пользователя (ГОСТ 19.505) |
+| [docs/PROGRAMMER_GUIDE.md](docs/PROGRAMMER_GUIDE.md) | Руководство программиста |
+| [DEVELOPMENT_LINUX_MACOS.md](DEVELOPMENT_LINUX_MACOS.md) | Сборка и запуск на Linux/macOS |
+
+## Матрица платформ
+
+| Платформа | Режим | Источники данных |
+|-----------|--------|------------------|
+| **Windows 10/11 x64** | Полный | WMI, LibreHardwareMonitor, WMI fallback, D3D11 GPU-стресс |
+| **Linux x64** | Ограниченный | `/proc`, `lm-sensors`, `nvidia-smi` (при наличии) |
+| **macOS** | Ограниченный | `sysctl`, `system_profiler`, частичная температура |
+| **Прочие ОС** | Минимальный | `UnixHardwareProvider` |
+
+Основная целевая платформа для релизных **exe** — **Windows x64**.
+
+## Возможности
+
+- Снимок системы (`DeviceSnapshot`): CPU, RAM, GPU, диски, сеть, сенсоры.
+- Мониторинг в реальном времени с адаптивным графиком (без OxyPlot).
+- Диагностика по порогам, SMART, эвристики узких мест.
+- Стресс-тесты: CPU, RAM, GPU (D3D11 на Windows / SIMD fallback), диск.
+- Бенчмарки CPU/RAM с сравнением с референсной таблицей.
+- Отчёты: TXT, HTML, JSON, MD, CSV; сравнение двух снимков.
+- Локальная история: SQLite (`%LocalAppData%\PC HealthCheck\`).
+- AI-аналитика через локальный [Ollama](https://ollama.com).
+
+## Быстрый старт (из исходников)
 
 ```bash
 dotnet restore
@@ -21,39 +63,53 @@ dotnet build
 dotnet run
 ```
 
-## AI Аналитика (локально, через Ollama)
+### Публикация win-x64 локально
 
-### Установка Ollama (Windows)
+**Framework-dependent** (нужен Runtime 9):
 
-Вариант 1 (рекомендую):
+```powershell
+dotnet publish -c Release -r win-x64 --self-contained false `
+  -p:PublishSingleFile=true `
+  -p:IncludeNativeLibrariesForSelfExtract=true `
+  -o ./artifacts/framework/publish
+```
+
+**Self-contained** (Runtime не нужен):
+
+```powershell
+dotnet publish -c Release -r win-x64 --self-contained true `
+  -p:PublishSingleFile=true `
+  -p:IncludeNativeLibrariesForSelfExtract=true `
+  -o ./artifacts/selfcontained/publish
+```
+
+## CI и релизы
+
+- **build.yml** — на каждый push/PR: сборка и артефакты `PC_HealthCheck_win-x64_framework.zip` и `PC_HealthCheck_win-x64_selfcontained.zip`.
+- **release.yml** — при push тега `v*` (например `v1.0.0`): те же zip прикрепляются к GitHub Release.
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+## AI-аналитика (Ollama)
 
 ```powershell
 winget install Ollama.Ollama
-```
-
-После установки запусти Ollama (в трее/служба), затем скачай модель:
-
-```powershell
 ollama pull llama3.2
-ollama list
 ```
 
-### Как пользоваться AI в приложении
+В приложении: вкладка **AI Аналитика** → **Проверить установку Ollama/модели** → ввод вопроса → **Запустить AI анализ**.
 
-1. Открой вкладку **`AI Аналитика`**.
-2. Нажми **`Проверить установку Ollama/модели`** — приложение покажет, что не так и какие команды выполнить.
-3. В поле “Вопрос” напиши запрос (пример: “Почему вчера в 22:00 были лаги?”).
-4. Нажми **`Запустить AI анализ`**.
-5. Результат: “Аномалии”, “Рекомендации” и сырой JSON (для issue/логов).
+## FAQ
 
-## FAQ (коротко)
+- **«Для запуска приложения требуется .NET»** — установите Desktop Runtime 9 или скачайте **selfcontained** zip.
+- **Нет температуры CPU** — на части ноутбуков OEM; смотрите загрузку CPU % и RAM; при необходимости запуск от администратора.
+- **GPU-стресс показывает «SIMD CPU»** — D3D11 недоступен; нагрузка идёт на процессор (fallback), не на видеокарту.
+- **AI не работает** — не запущен Ollama или не скачана модель.
+- **Ошибка БД** — не удаляйте `healthcheck_v2.db` при работе приложения; проверьте права на `%LocalAppData%\PC HealthCheck\`.
 
-- **AI не работает**: чаще всего не запущен Ollama или не скачана модель. Проверь через кнопку проверки на вкладке `AI Аналитика`.
-- **Нет датчиков на Linux**: установи `lm-sensors` и выполни `sudo sensors-detect`, затем `sensors`.
-- **Почему “GPU bottleneck” не всегда показывается**: зависит от доступности сенсоров GPU Load (LibreHardwareMonitor/драйверы).
+## Лицензия
 
-## Документация для Linux/macOS
-
-Подробная инструкция по разработке, запуску и публикации:
-
-- `DEVELOPMENT_LINUX_MACOS.md`
+Учебный дипломный проект. См. [LICENSE](LICENSE).

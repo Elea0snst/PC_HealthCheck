@@ -1,7 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:PC_HealthCheck.ViewModels"
-        xmlns:oxy="http://oxyplot.org/avalonia"
+        xmlns:views="using:PC_HealthCheck.Views"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
@@ -209,17 +209,24 @@
                                 <StackPanel>
                                     <TextBlock Text="Сессионная статистика (ТЗ 2.1.2 — мин./макс./средн.)" Classes="h2"/>
                                     <TextBlock Text="{Binding CpuTempSessionSummary}" TextWrapping="Wrap" Margin="0,12,0,8"/>
+                                    <TextBlock Text="{Binding MonitoringChartStatus}" TextWrapping="Wrap" Margin="0,0,0,6"/>
                                     <TextBlock Text="{Binding MonitoringNote}" TextWrapping="Wrap" Classes="muted"/>
                                 </StackPanel>
                             </Border>
                             <Border Classes="card">
                                 <StackPanel>
-                                    <TextBlock Text="График в реальном времени (OxyPlot)" Classes="h2"/>
-                                    <StackPanel Orientation="Horizontal" Spacing="16" Margin="0,10,0,8">
-                                        <CheckBox Content="Канал: температура CPU" IsChecked="{Binding ChartShowCpuTemp, Mode=TwoWay}"/>
-                                        <CheckBox Content="Канал: загрузка CPU" IsChecked="{Binding ChartShowCpuLoad, Mode=TwoWay}"/>
-                                    </StackPanel>
-                                    <oxy:PlotView Model="{Binding MonitoringPlotModel}" Height="360" MinHeight="280"/>
+                                    <TextBlock Text="График в реальном времени" Classes="h2"/>
+                                    <CheckBox Content="Авто: прокси-каналы, если нет вентиляторов/BIOS" IsChecked="{Binding ChartAutoAdapt, Mode=TwoWay}" Margin="0,10,0,4"/>
+                                    <WrapPanel Margin="0,4,0,8">
+                                        <CheckBox Content="CPU °C" IsChecked="{Binding ChartShowCpuTemp, Mode=TwoWay}" Margin="0,0,12,6"/>
+                                        <CheckBox Content="CPU %" IsChecked="{Binding ChartShowCpuLoad, Mode=TwoWay}" Margin="0,0,12,6"/>
+                                        <CheckBox Content="GPU °C" IsChecked="{Binding ChartShowGpuTemp, Mode=TwoWay}" Margin="0,0,12,6"/>
+                                        <CheckBox Content="GPU %" IsChecked="{Binding ChartShowGpuLoad, Mode=TwoWay}" Margin="0,0,12,6"/>
+                                        <CheckBox Content="RAM %" IsChecked="{Binding ChartShowRamUsage, Mode=TwoWay}" Margin="0,0,12,6"/>
+                                        <CheckBox Content="Накопитель °C" IsChecked="{Binding ChartShowStorageTemp, Mode=TwoWay}" Margin="0,0,12,6"/>
+                                        <CheckBox Content="CPU Вт" IsChecked="{Binding ChartShowCpuPower, Mode=TwoWay}" Margin="0,0,12,6"/>
+                                    </WrapPanel>
+                                    <views:MonitoringChartPanel x:Name="MonitoringChart" Height="360"/>
                                 </StackPanel>
                             </Border>
                             <Border Classes="card">
@@ -463,7 +470,7 @@
                                         <ComboBox ItemsSource="{Binding StressProfileOptions}" SelectedItem="{Binding SelectedStressProfile}" MinWidth="260"/>
                                         <Button Content="Запустить CPU тест" Command="{Binding StartCpuStressCommand}" Margin="0,12,0,8"/>
                                         <Button Content="Запустить RAM тест" Command="{Binding StartRamStressCommand}" Margin="0,0,0,8"/>
-                                        <Button Content="Запустить GPU тест" Command="{Binding StartGpuStressCommand}" Margin="0,0,0,8"/>
+                                        <Button Content="Запустить GPU тест (D3D11)" Command="{Binding StartGpuStressCommand}" Margin="0,0,0,8"/>
                                         <Button Content="Запустить Disk тест" Command="{Binding StartDiskStressCommand}" Margin="0,0,0,8"/>
                                         <Button Content="Остановить" Command="{Binding StopStressCommand}" Classes="secondary"/>
                                     </StackPanel>
@@ -480,7 +487,7 @@
                                 <StackPanel Spacing="10">
                                     <TextBlock Text="Быстрый бенчмарк и сравнение с эталоном" Classes="h2"/>
                                     <TextBlock TextWrapping="Wrap" Classes="muted"
-                                               Text="~4 с: скаляр FP на CPU и копирование RAM. Эталон подбирается по строке модели CPU из встроенной таблицы (ориентировочно)."/>
+                                               Text="~8 с: single/multi CPU (как Cinebench ST/MT), SIMD, RAM read/write (как AIDA64). Сводный индекс 1000 — эталон по модели CPU."/>
                                     <Button Content="Запустить бенчмарк" Command="{Binding RunBenchmarkCommand}" HorizontalAlignment="Left" Width="200"/>
                                     <ListBox ItemsSource="{Binding BenchmarkResultLines}" MinHeight="160" MaxHeight="280"/>
                                 </StackPanel>

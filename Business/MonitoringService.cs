@@ -44,7 +44,7 @@ public sealed class MonitoringService : IDisposable
             {
                 while (_timer is not null && await _timer.WaitForNextTickAsync(_cts.Token))
                 {
-                    var snap = await _provider.ReadSnapshotAsync();
+                    var snap = SnapshotEnricher.Enrich(await _provider.ReadSnapshotAsync());
                     UpdateCount++;
                     LastUpdateLocal = DateTime.Now;
                     SnapshotUpdated?.Invoke(this, snap);

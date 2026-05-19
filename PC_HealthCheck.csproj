@@ -4,8 +4,14 @@
     <TargetFramework>net9.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <Version>1.0.0</Version>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>1.0.0.0</FileVersion>
+    <Product>PC HealthCheck</Product>
+    <Description>Диагностика, мониторинг и нагрузочное тестирование компонентов ПК</Description>
   </PropertyGroup>
 
   <ItemGroup>
@@ -27,7 +33,9 @@
     <PackageReference Include="LibreHardwareMonitorLib" Version="0.9.6" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.5" />
     <PackageReference Include="Ollama.NET" Version="1.0.6" />
-    <PackageReference Include="OxyPlot.Avalonia" Version="2.1.0-Avalonia11" />
     <PackageReference Include="System.Management" Version="10.0.5" />
+    <PackageReference Include="System.Diagnostics.PerformanceCounter" Version="10.0.5" />
+    <PackageReference Include="Vortice.D3DCompiler" Version="3.6.2" />
+    <PackageReference Include="Vortice.Direct3D11" Version="3.6.2" />
   </ItemGroup>
 </Project>

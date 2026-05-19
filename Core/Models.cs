@@ -448,7 +448,7 @@ public sealed class StressResult
 
 
 
-/// <summary>Результат быстрого синтетического бенчмарка и сравнение с встроенным эталоном.</summary>
+/// <summary>Результат синтетического бенчмарка (аналоги: single/multi CPU, SIMD, RAM read/write).</summary>
 
 public sealed class BenchmarkRunResult
 
@@ -456,17 +456,51 @@ public sealed class BenchmarkRunResult
 
     public DateTime CompletedUtc { get; set; } = DateTime.UtcNow;
 
-    /// <summary>Скалярная нагрузка: млн итераций sqrt/sin в секунду (условные «мегаоп./с»).</summary>
+    /// <summary>Один поток: млн итераций sqrt/sin в секунду (аналог single-core / Cinebench ST).</summary>
+
+    public double CpuSingleThreadMegaOps { get; set; }
+
+    /// <summary>Все потоки: суммарные млн оп./с (аналог multi-core / Cinebench MT).</summary>
+
+    public double CpuMultiThreadMegaOps { get; set; }
+
+    /// <summary>SIMD (AVX/Vector): оценка GFLOPS.</summary>
+
+    public double CpuSimdGflops { get; set; }
+
+    /// <summary>Чтение RAM, многопоточное копирование, ГБ/с.</summary>
+
+    public double RamReadBandwidthGbPerSec { get; set; }
+
+    /// <summary>Запись RAM, многопоточное копирование, ГБ/с.</summary>
+
+    public double RamWriteBandwidthGbPerSec { get; set; }
+
+    /// <summary>Сводный индекс 1000 ≈ эталонная CPU из таблицы.</summary>
+
+    public double CompositeIndex { get; set; }
+
+    /// <summary>Совместимость: то же, что CpuSingleThreadMegaOps.</summary>
 
     public double CpuFpMegaOpsPerSec { get; set; }
 
-    /// <summary>Пиковая скорость копирования буферов, ГБ/с.</summary>
+    /// <summary>Совместимость: среднее read/write RAM.</summary>
 
     public double RamBandwidthGbPerSec { get; set; }
 
     public double? ReferenceCpuMegaOps { get; set; }
 
+    public double? ReferenceCpuMultiMegaOps { get; set; }
+
     public double? ReferenceRamGbps { get; set; }
+
+    public double? ReferenceRamReadGbps { get; set; }
+
+    public double? ReferenceRamWriteGbps { get; set; }
+
+    public double? ReferenceSimdGflops { get; set; }
+
+    public double? ReferenceCompositeIndex { get; set; }
 
     public string ReferenceMatchLabel { get; set; } = "";
 
